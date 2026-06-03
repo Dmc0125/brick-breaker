@@ -1,0 +1,39 @@
+---
+import "../styles/global.css";
+---
+
+<html class="w-full min-h-screen">
+    <head>
+        <title>Astro</title>
+    </head>
+    <body class="w-full min-h-screen px-8 mt-10 bg-black">
+        <div class="relative w-full max-w-[800px] mx-auto">
+            <canvas
+                id="canvas"
+                class="w-full max-w-[800px] aspect-[3/2] rounded border border-cyan-500"
+            ></canvas>
+
+            <div
+                id="start-menu"
+                class="absolute inset-0 flex flex-col items-center justify-center gap-4"
+            >
+                <h1 class="text-cyan-200 text-3xl font-bold">Brick breaker</h1>
+
+                <button
+                    id="start-button"
+                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
+                >
+                    Start Breaking
+                </button>
+            </div>
+
+            <div
+                id="countdown"
+                class="hidden absolute inset-0 flex items-center justify-center text-cyan-200 text-3xl font-bold"
+            >
+            </div>
+        </div>
+    </body>
+</html>
+
+<script src="../js/index.ts"></script>
