@@ -32,6 +32,38 @@ import "../styles/global.css";
                 class="hidden absolute inset-0 flex items-center justify-center text-cyan-200 text-3xl font-bold"
             >
             </div>
+
+            <div
+                id="gameover"
+                class="hidden absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/10 rounded"
+                style="backdrop-filter: blur(5px)"
+            >
+                <p class="text-red-400 text-3xl font-bold text-shadow-lg">
+                    Game Over
+                </p>
+                <button
+                    id="restart-button"
+                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
+                >
+                    Restart
+                </button>
+            </div>
+
+            <div
+                id="paused"
+                class="hidden absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/10 rounded"
+                style="backdrop-filter: blur(5px)"
+            >
+                <p class="text-cyan-200 text-3xl font-bold text-shadow-lg">
+                    Paused
+                </p>
+                <button
+                    id="resume-button"
+                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
+                >
+                    Resume
+                </button>
+            </div>
         </div>
     </body>
 </html>

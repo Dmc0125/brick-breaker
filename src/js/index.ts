@@ -1,6 +1,11 @@
-import { draw_rect, draw_circle, type Render_Context } from "./render.ts";
+import {
+  draw_rect,
+  draw_circle,
+  type Render_Context,
+  type Color,
+} from "./render.ts";
 
-type Game_Phase = "start" | "countdown" | "playing" | "gameover";
+type Game_Phase = "start" | "countdown" | "playing" | "gameover" | "paused";
 
 type Ball = {
   radius: number;
@@ -69,6 +74,11 @@ function brick_rect(brick: Brick): {
   };
 }
 
+const brick_color: Record<number, Color> = {
+  1: { r: 223, g: 190, b: 153, a: 1 },
+  2: { r: 236, g: 146, b: 145, a: 1 },
+  3: { r: 219, g: 83, b: 117, a: 1 },
+};
 let bricks = [] as Brick[];
 
 function generate_bricks(cols: number, rows: number) {
@@ -104,7 +114,7 @@ function generate_bricks(cols: number, rows: number) {
   }
 }
 
-type Key_Code = "Left" | "Right" | "R";
+type Key_Code = "Left" | "Right" | "R" | "O" | "P";
 type Key_Mod = "CTRL" | "SHIFT";
 
 const ball = {
@@ -113,7 +123,7 @@ const ball = {
 
 const paddle = {
   w: 80,
-  h: 20,
+  h: 10,
   speed: 2,
 } as Paddle;
 
@@ -122,21 +132,8 @@ type Game_State = {
 
   countdown: number;
   last_countdown_update: number;
-
-  countdown_element: HTMLDivElement;
-  start_menu_element: HTMLDivElement;
-  start_btn_element: HTMLButtonElement;
 };
 
-const start_button = document.getElementById(
-  "start-button",
-)! as HTMLButtonElement;
-const start_menu_element = document.getElementById(
-  "start-menu",
-)! as HTMLDivElement;
-const countdown_element = document.getElementById(
-  "countdown",
-)! as HTMLDivElement;
 const canvas_element = document.getElementById("canvas")! as HTMLCanvasElement;
 
 const render_ctx = {
@@ -158,6 +155,14 @@ window.addEventListener("keydown", function (e) {
     case "R":
       keydown.set("R", true);
       break;
+    case "o":
+    case "O":
+      keydown.set("O", true);
+      break;
+    case "p":
+    case "P":
+      keydown.set("P", true);
+      break;
     case "Control":
       keymod.set("CTRL", true);
       break;
@@ -178,6 +183,14 @@ window.addEventListener("keyup", function (e) {
     case "R":
       keydown.set("R", false);
       break;
+    case "o":
+    case "O":
+      keydown.set("O", false);
+      break;
+    case "p":
+    case "P":
+      keydown.set("P", false);
+      break;
     case "Control":
       keymod.set("CTRL", false);
       break;
@@ -189,13 +202,8 @@ window.addEventListener("keyup", function (e) {
 
 let game_state: Game_State = {
   phase: "start",
-
   countdown: 3,
   last_countdown_update: 0,
-
-  countdown_element,
-  start_menu_element,
-  start_btn_element: start_button,
 };
 
 function set_canvas_size() {
@@ -210,29 +218,66 @@ function set_canvas_size() {
 window.addEventListener("DOMContentLoaded", set_canvas_size);
 window.addEventListener("resize", set_canvas_size);
 
-game_state.start_btn_element.addEventListener("click", function () {
-  switch (game_state.phase) {
-    case "start":
-      game_state.phase = "countdown";
-      game_state.countdown = 3;
-      game_state.last_countdown_update = performance.now();
+const start_button_element = document.getElementById(
+  "start-button",
+)! as HTMLButtonElement;
+const start_menu_element = document.getElementById(
+  "start-menu",
+)! as HTMLDivElement;
+const restart_button_element = document.getElementById(
+  "restart-button",
+)! as HTMLButtonElement;
+const resume_button_element = document.getElementById(
+  "resume-button",
+)! as HTMLButtonElement;
 
-      game_state.start_menu_element.classList.add("hidden");
-
-      game_state.countdown_element.classList.remove("hidden");
-      game_state.countdown_element.innerText = `${game_state.countdown}`;
-
-      break;
+start_button_element.addEventListener("click", function () {
+  if (game_state.phase === "start") {
+    countdown_start();
+  }
+});
+restart_button_element.addEventListener("click", function () {
+  if (game_state.phase === "gameover") {
+    countdown_start();
+  }
+});
+resume_button_element.addEventListener("click", function () {
+  if (game_state.phase === "paused") {
+    const paused_element = document.getElementById("paused")! as HTMLDivElement;
+    paused_element.classList.add("hidden");
+    game_state.phase = "playing";
   }
 });
 
-// let mouse_pos = { x: 0, y: 0 };
-// canvas_element.addEventListener("mousemove", function(e) {
-//     mouse_pos.x = e.layerX;
-//     mouse_pos.y = e.layerY;
-// });
+const countdown_element = document.getElementById(
+  "countdown",
+)! as HTMLDivElement;
+const gameover_element = document.getElementById("gameover")! as HTMLDivElement;
+
+function countdown_start() {
+  render_ctx.canvas_ctx.clearRect(
+    0,
+    0,
+    render_ctx.game_width,
+    render_ctx.game_height,
+  );
+
+  game_state.phase = "countdown";
+  game_state.countdown = 3;
+  game_state.last_countdown_update = performance.now();
+
+  start_menu_element.classList.add("hidden");
+  gameover_element.classList.add("hidden");
+
+  countdown_element.classList.remove("hidden");
+  countdown_element.innerText = `${game_state.countdown}`;
+}
 
 function game_start() {
+  start_menu_element.classList.add("hidden");
+  countdown_element.classList.add("hidden");
+  gameover_element.classList.add("hidden");
+
   game_state.phase = "playing";
 
   paddle.x = render_ctx.game_width / 2 - paddle.w / 2;
@@ -245,7 +290,7 @@ function game_start() {
 
   generate_bricks(8, 5);
 
-  game_state.countdown_element.classList.add("hidden");
+  countdown_element.classList.add("hidden");
 }
 
 type Collision_Rect = {
@@ -284,8 +329,23 @@ function check_collision(
 
 function frame(elapsed_time: number) {
   if (keydown.get("R")) {
-    game_state.start_menu_element.classList.add("hidden");
     game_start();
+    requestAnimationFrame(frame);
+    return;
+  } else if (keydown.get("O")) {
+    start_menu_element.classList.add("hidden");
+    countdown_element.classList.add("hidden");
+
+    game_state.phase = "gameover";
+    gameover_element.classList.remove("hidden");
+
+    requestAnimationFrame(frame);
+    return;
+  } else if (keydown.get("P")) {
+    const paused_element = document.getElementById("paused")! as HTMLDivElement;
+    paused_element.classList.remove("hidden");
+    game_state.phase = "paused";
+
     requestAnimationFrame(frame);
     return;
   }
@@ -296,7 +356,7 @@ function frame(elapsed_time: number) {
         game_state.countdown -= 1;
         game_state.last_countdown_update = elapsed_time;
 
-        game_state.countdown_element.innerText = `${game_state.countdown}`;
+        countdown_element.innerText = `${game_state.countdown}`;
 
         if (game_state.countdown === -1) {
           game_start();
@@ -344,6 +404,7 @@ function frame(elapsed_time: number) {
           ball.vx = -ball.vx;
         } else if (bottom < 0) {
           game_state.phase = "gameover";
+          gameover_element.classList.remove("hidden");
         } else if (top > render_ctx.game_height) {
           ball.y = render_ctx.game_height - ball.radius;
           ball.vy = -ball.vy;
@@ -395,21 +456,22 @@ function frame(elapsed_time: number) {
       });
 
       // render paddle
-      draw_rect(render_ctx, paddle, {
-        r: 0,
-        g: 255,
-        b: 0,
-        a: 1,
-      });
+      draw_rect(
+        render_ctx,
+        paddle,
+        {
+          r: 0,
+          g: 255,
+          b: 0,
+          a: 1,
+        },
+        5,
+      );
 
       // render bricks
       for (const brick of bricks) {
-        draw_rect(render_ctx, brick, {
-          r: 255,
-          g: 255,
-          b: 255,
-          a: 1,
-        });
+        const color = brick_color[brick.lives - brick.hits];
+        draw_rect(render_ctx, brick, color, 5);
       }
 
       break;

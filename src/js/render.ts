@@ -18,11 +18,23 @@ export type Rect = {
   h: number;
 };
 
-export function draw_rect(ctx: Render_Context, rect: Rect, color: Color) {
+export function draw_rect(
+  ctx: Render_Context,
+  rect: Rect,
+  color: Color,
+  border_radius = 0,
+) {
   const cctx = ctx.canvas_ctx;
   cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
   const canvas_y = ctx.game_height - rect.y - rect.h;
-  cctx.fillRect(rect.x, canvas_y, rect.w, rect.h);
+
+  if (border_radius > 0) {
+    cctx.beginPath();
+    cctx.roundRect(rect.x, canvas_y, rect.w, rect.h, border_radius);
+    cctx.fill();
+  } else {
+    cctx.fillRect(rect.x, canvas_y, rect.w, rect.h);
+  }
 }
 
 export function draw_circle(
