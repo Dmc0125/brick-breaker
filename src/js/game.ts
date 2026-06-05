@@ -75,17 +75,11 @@ const brick_color: Record<number, Color> = {
     3: { r: 219, g: 83, b: 117, a: 1 },
 };
 
-
-export type Key_Code = "Left" | "Right" | "R" | "O" | "P";
-// type Key_Mod = "CTRL" | "SHIFT";
-type Key = {
-    last_pressed: number;
-    pressed: boolean;
-}
+export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
 
 export type Game_Context = {
     elapsed_time: number;
-    keydown: Map<Key_Code, boolean>;
+    keys_records: Map<Key_Code, number>;
     game_phase: Game_Phase;
     render_ctx: Render_Context;
 
@@ -108,7 +102,15 @@ export type Game_Context = {
     bricks: Brick[];
 }
 
-export function game_context_init(ctx: Game_Context) {
+export function game_context_init(canvas_ctx: CanvasRenderingContext2D): Game_Context {
+    const ctx = {} as Game_Context;
+
+    ctx.game_phase = "start";
+    ctx.render_ctx = {
+        canvas_ctx,
+    } as Render_Context;
+    ctx.keys_records = new Map<Key_Code, number>();
+
     ctx.paddle = {
         w: 80,
         h: 10,
@@ -143,6 +145,8 @@ export function game_context_init(ctx: Game_Context) {
     ctx.resume_button_element = document.getElementById(
         "resume-button",
     )! as HTMLButtonElement;
+
+    return ctx;
 }
 
 export function countdown_start(ctx: Game_Context) {
@@ -189,7 +193,7 @@ export function game_start(ctx: Game_Context, resume: boolean) {
 
         ctx.ball.x = render_ctx.game_width / 2 - ctx.ball.radius;
         ctx.ball.y = 20 + ctx.paddle.h + ctx.ball.radius;
-        ctx.ball.vx = (Math.random() > 0.2 ? 1 : -1) * 2;
+        ctx.ball.vx = Math.random() * 2 * (Math.random() > 0.5 ? 1 : -1);
         ctx.ball.vy = 2;
 
         { // generate bricks
@@ -233,40 +237,6 @@ export function game_start(ctx: Game_Context, resume: boolean) {
     ctx.countdown_element.classList.add("hidden");
 }
 
-export function process_keys(ctx: Game_Context) {
-    const keydown = ctx.keydown;
-
-    if (keydown.get("R")) { // debug
-        ctx.start_menu_element.classList.add("hidden");
-        ctx.countdown_element.classList.add("hidden");
-        ctx.gameover_element.classList.add("hidden");
-
-        game_start(ctx, false);
-    } else if (keydown.get("O")) { // debug
-        ctx.game_phase = "gameover";
-
-        // ui
-        ctx.start_menu_element.classList.add("hidden");
-        ctx.countdown_element.classList.add("hidden");
-        ctx.gameover_element.classList.add("remove");
-    } else if (keydown.get("P")) {
-        if (ctx.game_phase === "playing") {
-            ctx.game_phase = "paused";
-
-            // ui
-            ctx.paused_element.classList.remove("hidden");
-        }
-    } else if (keydown.get("Left")) {
-        if (ctx.game_phase === "playing") {
-            ctx.paddle.x -= ctx.paddle.speed;
-        }
-    } else if (keydown.get("Right")) {
-        if (ctx.game_phase === "playing") {
-            ctx.paddle.x += ctx.paddle.speed;
-        }
-    }
-}
-
 type Collision_Rect = {
     left: number;
     top: number;
@@ -275,6 +245,8 @@ type Collision_Rect = {
 };
 type Collision_Result = { vx: number; vy: number };
 
+// TODO: this does not work correclty all the time, sometimes r1 gets stuck
+// inside r2, r1 should get pushed out
 function check_collision(
     r1: Collision_Rect,
     r2: Collision_Rect,
@@ -301,7 +273,67 @@ function check_collision(
     }
 }
 
-export function update_and_render(ctx: Game_Context) {
+const KEY_TIMEOUT = 200;
+
+function can_press_key(ctx: Game_Context, key_code: Key_Code): boolean {
+    const last_recorded = ctx.keys_records.get(key_code);
+    if (last_recorded === undefined) {
+        return true;
+    }
+    const now = performance.now();
+    return now - last_recorded > KEY_TIMEOUT;
+}
+
+export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
+    { // process keyboard input
+        if (keys_pressed.includes("R") && can_press_key(ctx, "R")) {
+            ctx.keys_records.set("R", performance.now());
+
+            ctx.start_menu_element.classList.add("hidden");
+            ctx.countdown_element.classList.add("hidden");
+            ctx.gameover_element.classList.add("hidden");
+
+            game_start(ctx, false);
+        } else if (keys_pressed.includes("O") && can_press_key(ctx, "O")) {
+            ctx.keys_records.set("O", performance.now());
+
+            ctx.game_phase = "gameover";
+
+            // ui
+            ctx.start_menu_element.classList.add("hidden");
+            ctx.countdown_element.classList.add("hidden");
+            ctx.gameover_element.classList.add("remove");
+        } else if (keys_pressed.includes("P") && can_press_key(ctx, "P")) {
+            ctx.keys_records.set("P", performance.now());
+
+            if (ctx.game_phase === "playing") {
+                ctx.game_phase = "paused";
+
+                // ui
+                ctx.paused_element.classList.remove("hidden");
+            }
+        }
+
+        if (ctx.game_phase === "playing") {
+            const space = keys_pressed.includes("Space")
+            if (ctx.paddle.speed === 2 && space) {
+                ctx.paddle.speed = 5;
+            } else if (ctx.paddle.speed === 5 && !space) {
+                ctx.paddle.speed = 2;
+            }
+
+            const arrow_left = keys_pressed.includes("Left")
+            if (arrow_left && arrow_left) {
+                ctx.paddle.x -= ctx.paddle.speed;
+            }
+
+            const arrow_right = keys_pressed.includes("Right")
+            if (arrow_right && arrow_right) {
+                ctx.paddle.x += ctx.paddle.speed;
+            }
+        }
+    }
+
     switch (ctx.game_phase) {
         case "countdown_start":
         case "countdown_paused":
@@ -360,6 +392,8 @@ export function update_and_render(ctx: Game_Context) {
             }
 
             {
+                // TODO: change the ball direction based on where it hits the paddle
+
                 // check collisions between ctx.ball.and paddle
                 const collision = check_collision(ball_r, paddle_r);
 

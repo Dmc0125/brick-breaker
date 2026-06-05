@@ -1,35 +1,48 @@
-import { countdown_start, game_context_init, game_start, process_keys, update_and_render, type Game_Context, type Key_Code } from "./game.ts";
+import { countdown_start, game_context_init, update_and_render, type Key_Code } from "./game.ts";
 
 const canvas_element = document.getElementById("canvas")! as HTMLCanvasElement;
+const game_ctx = game_context_init(canvas_element.getContext("2d")!);
 
-const game_ctx = {
-    game_phase: "start",
-    keydown: new Map<Key_Code, boolean>(),
-    render_ctx: {
-        canvas_ctx: canvas_element.getContext("2d")!,
-    },
-} as Game_Context;
-game_context_init(game_ctx);
+const keys_pressed: Key_Code[] = [];
+
+function press_key(key_code: Key_Code) {
+    if (!keys_pressed.includes(key_code)) {
+        keys_pressed.push(key_code);
+    }
+}
+
+function unpress_key(key_code: Key_Code) {
+    for (let i = 0; i < keys_pressed.length; i++) {
+        if (keys_pressed[i] === key_code) {
+            keys_pressed.splice(i, 1);
+            break;
+        }
+    }
+}
 
 window.addEventListener("keydown", function(e) {
     switch (e.key) {
         case "ArrowLeft":
-            game_ctx.keydown.set("Left", true);
+            press_key("Left");
             break;
         case "ArrowRight":
-            game_ctx.keydown.set("Right", true);
+            press_key("Right");
             break;
         case "r":
         case "R":
-            game_ctx.keydown.set("R", true);
+            press_key("R");
             break;
         case "o":
         case "O":
-            game_ctx.keydown.set("O", true);
+            press_key("O");
             break;
         case "p":
         case "P":
-            game_ctx.keydown.set("P", true);
+            press_key("P");
+            break;
+        case " ":
+            e.preventDefault();
+            press_key("Space");
             break;
         case "Control":
             // keymod.set("CTRL", true);
@@ -43,22 +56,26 @@ window.addEventListener("keydown", function(e) {
 window.addEventListener("keyup", function(e) {
     switch (e.key) {
         case "ArrowLeft":
-            game_ctx.keydown.set("Left", false);
+            unpress_key("Left");
             break;
         case "ArrowRight":
-            game_ctx.keydown.set("Right", false);
+            unpress_key("Right");
             break;
         case "r":
         case "R":
-            game_ctx.keydown.set("R", false);
+            unpress_key("R");
             break;
         case "o":
         case "O":
-            game_ctx.keydown.set("O", false);
+            unpress_key("O");
             break;
         case "p":
         case "P":
-            game_ctx.keydown.set("P", false);
+            unpress_key("P");
+            break;
+        case " ":
+            e.preventDefault();
+            unpress_key("Space");
             break;
         case "Control":
             // keymod.set("CTRL", false);
@@ -96,8 +113,8 @@ game_ctx.resume_button_element.addEventListener("click", function() {
 function frame(elapsed_time: number) {
     game_ctx.elapsed_time = elapsed_time;
 
-    process_keys(game_ctx)
-    update_and_render(game_ctx)
+    // process_keys(game_ctx)
+    update_and_render(game_ctx, keys_pressed)
 
     requestAnimationFrame(frame);
 }
