@@ -7,8 +7,10 @@ import {
 
 const BALL_SPEED_PER_SECOND = 300;
 const PADDLE_SPEED_PER_SECOND = 300;
-const PADDLE_BOOST_SPEED_PER_SECOND = 500;
+const PADDLE_BOOST_SPEED_PER_SECOND = 800;
 const PARTICLE_MAX_SPEED_PER_SECOND = 40;
+const BOOST_COOLDOWN_MS = 4000;
+const BOOST_DURATION_MS = 500;
 
 type Rect = {
     left: number;
@@ -157,8 +159,12 @@ type Brick_Particle = {
     alpha: number;
 };
 
-function brick_particles_create(particles: Brick_Particle[], brick_rect: Rect, time: number) {
-    const count = 20
+function brick_particles_create(
+    particles: Brick_Particle[],
+    brick_rect: Rect,
+    time: number,
+) {
+    const count = 20;
     const x_range = brick_rect.right - brick_rect.left;
     const y_range = brick_rect.top - brick_rect.bottom;
 
@@ -166,8 +172,10 @@ function brick_particles_create(particles: Brick_Particle[], brick_rect: Rect, t
         const x = Math.random() * x_range + brick_rect.left;
         const y = Math.random() * y_range + brick_rect.bottom;
 
-        const vx = (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
-        const vy = (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
+        const vx =
+            (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
+        const vy =
+            (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
 
         particles.push({
             x,
@@ -178,16 +186,16 @@ function brick_particles_create(particles: Brick_Particle[], brick_rect: Rect, t
             lifetime: 400,
             timestamp: time,
             alpha: 1,
-        })
+        });
     }
 }
 
 export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
+export type Boost_State = "boosting" | "recharging" | "full";
 
 export type Game_Context = {
     elapsed_time: number;
-    // in seconds
-    delta_time: number;
+    delta_time_secs: number;
     keys_records: Map<Key_Code, number>;
     game_phase: Game_Phase;
     render_ctx: Render_Context;
@@ -206,6 +214,11 @@ export type Game_Context = {
     last_countdown_update: number;
 
     // game
+    boost_state: Boost_State;
+    boost_last_used_timestamp: number;
+    boost_indicator_element: HTMLDivElement;
+    boost_indicator_inner_element: HTMLDivElement;
+
     ball: Ball;
     paddle: Paddle;
     bricks: Brick[];
@@ -218,13 +231,20 @@ export function game_context_init(
     const ctx = {} as Game_Context;
 
     ctx.elapsed_time = 0;
-    ctx.delta_time = 0;
+    ctx.delta_time_secs = 0;
 
     ctx.game_phase = "start";
     ctx.render_ctx = {
         canvas_ctx,
     } as Render_Context;
     ctx.keys_records = new Map<Key_Code, number>();
+
+    ctx.boost_indicator_element = document.getElementById(
+        "boost-indicator",
+    )! as HTMLDivElement;
+    ctx.boost_indicator_inner_element = document.getElementById(
+        "boost-indicator-inner",
+    )! as HTMLDivElement;
 
     ctx.paddle = {
         w: 80,
@@ -253,7 +273,9 @@ export function game_context_init(
     ctx.countdown_element = document.getElementById(
         "countdown",
     )! as HTMLDivElement;
-    ctx.gameover_element = document.getElementById("gameover")! as HTMLDivElement;
+    ctx.gameover_element = document.getElementById(
+        "gameover",
+    )! as HTMLDivElement;
     ctx.restart_button_element = document.getElementById(
         "restart-button",
     )! as HTMLButtonElement;
@@ -303,8 +325,21 @@ export function countdown_start(ctx: Game_Context) {
     }
 }
 
+function boost_indicator_start_recharge(ctx: Game_Context) {
+    ctx.boost_indicator_inner_element.classList.add("bg-gray-500");
+    ctx.boost_indicator_inner_element.classList.remove("bg-yellow-500");
+
+    ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms, background-color 200ms ease-in-out`;
+
+    ctx.boost_indicator_inner_element.classList.remove("w-0");
+    ctx.boost_indicator_inner_element.classList.add("w-full");
+}
+
 export function game_start(ctx: Game_Context, resume: boolean) {
     ctx.game_phase = "playing";
+
+    ctx.boost_state = "recharging";
+    ctx.boost_last_used_timestamp = ctx.elapsed_time;
 
     if (!resume) {
         const { render_ctx } = ctx;
@@ -314,7 +349,10 @@ export function game_start(ctx: Game_Context, resume: boolean) {
 
         ctx.ball.x = render_ctx.game_width / 2 - ctx.ball.radius;
         ctx.ball.y = ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
-        ctx.ball.vx = Math.random() * BALL_SPEED_PER_SECOND * (Math.random() > 0.5 ? 1 : -1);
+        ctx.ball.vx =
+            Math.random() *
+            BALL_SPEED_PER_SECOND *
+            (Math.random() > 0.5 ? 1 : -1);
         ctx.ball.vy = BALL_SPEED_PER_SECOND;
 
         {
@@ -323,6 +361,7 @@ export function game_start(ctx: Game_Context, resume: boolean) {
             const cols = 8;
 
             ctx.bricks = [];
+            ctx.brick_particles = [];
 
             const margin_side = 20;
             const margin_top = 20;
@@ -342,7 +381,9 @@ export function game_start(ctx: Game_Context, resume: boolean) {
                         row * (brick_height + padding) -
                         brick_height;
 
-                    ctx.bricks.push(brick_init(x, y, brick_width, brick_height));
+                    ctx.bricks.push(
+                        brick_init(x, y, brick_width, brick_height),
+                    );
                 }
             }
         }
@@ -350,6 +391,16 @@ export function game_start(ctx: Game_Context, resume: boolean) {
 
     // ui
     ctx.countdown_element.classList.add("hidden");
+
+    const transition_duration =
+        ctx.boost_indicator_inner_element.style.transition;
+    ctx.boost_indicator_inner_element.style.transition = `width 0s`;
+    ctx.boost_indicator_inner_element.classList.remove("w-full");
+    ctx.boost_indicator_inner_element.classList.add("w-0");
+    ctx.boost_indicator_inner_element.offsetWidth;
+    ctx.boost_indicator_inner_element.style.transition = `width ${transition_duration}, background-color 200ms ease-in-out`;
+
+    boost_indicator_start_recharge(ctx);
 }
 
 type Collision_Direction = "horizontal" | "vertical";
@@ -361,10 +412,7 @@ type Collision_Result = {
 
 // TODO: this does not work correclty all the time, sometimes r1 gets stuck
 // inside r2, r1 should get pushed out
-function check_collision(
-    r1: Rect,
-    r2: Rect,
-): Collision_Result | null {
+function check_collision(r1: Rect, r2: Rect): Collision_Result | null {
     const overlaps_x = r1.right > r2.left && r1.left < r2.right;
     const overlaps_y = r1.bottom < r2.top && r1.top > r2.bottom;
 
@@ -436,25 +484,6 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                 ctx.paused_element.classList.remove("hidden");
             }
         }
-
-        if (ctx.game_phase === "playing") {
-            const space = keys_pressed.includes("Space");
-            if (ctx.paddle.speed === PADDLE_SPEED_PER_SECOND && space) {
-                ctx.paddle.speed = PADDLE_BOOST_SPEED_PER_SECOND;
-            } else if (ctx.paddle.speed === PADDLE_BOOST_SPEED_PER_SECOND && !space) {
-                ctx.paddle.speed = PADDLE_SPEED_PER_SECOND;
-            }
-
-            const arrow_left = keys_pressed.includes("Left");
-            if (arrow_left && arrow_left) {
-                ctx.paddle.x -= ctx.paddle.speed * ctx.delta_time;
-            }
-
-            const arrow_right = keys_pressed.includes("Right");
-            if (arrow_right && arrow_right) {
-                ctx.paddle.x += ctx.paddle.speed * ctx.delta_time;
-            }
-        }
     }
 
     switch (ctx.game_phase) {
@@ -473,6 +502,81 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
 
             break;
         case "playing":
+            {
+                // paddle movement
+                switch (ctx.boost_state) {
+                    case "boosting":
+                        if (
+                            ctx.boost_last_used_timestamp + BOOST_DURATION_MS <
+                            ctx.elapsed_time
+                        ) {
+                            // boost end
+                            ctx.boost_state = "recharging";
+
+                            boost_indicator_start_recharge(ctx);
+                        }
+                        break;
+                    case "recharging":
+                        if (
+                            ctx.boost_last_used_timestamp +
+                                BOOST_COOLDOWN_MS +
+                                BOOST_DURATION_MS <
+                            ctx.elapsed_time
+                        ) {
+                            // boost recharged
+                            ctx.boost_state = "full";
+
+                            // ui
+                            ctx.boost_indicator_inner_element.classList.remove(
+                                "bg-gray-500",
+                            );
+                            ctx.boost_indicator_inner_element.classList.add(
+                                "bg-cyan-500",
+                            );
+                            ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms, background-color 200ms ease-in-out`;
+                        }
+                        break;
+                    case "full":
+                        if (keys_pressed.includes("Space")) {
+                            // boost used
+                            ctx.boost_state = "boosting";
+                            ctx.boost_last_used_timestamp = ctx.elapsed_time;
+
+                            // ui
+                            ctx.boost_indicator_inner_element.classList.remove(
+                                "bg-cyan-500",
+                            );
+                            ctx.boost_indicator_inner_element.classList.add(
+                                "bg-yellow-500",
+                            );
+                            ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_DURATION_MS}ms, background-color 200ms ease-in-out`;
+
+                            ctx.boost_indicator_inner_element.classList.remove(
+                                "w-full",
+                            );
+                            ctx.boost_indicator_inner_element.classList.add(
+                                "w-0",
+                            );
+                        }
+                        break;
+                }
+
+                const paddle_speed =
+                    ctx.boost_state === "boosting"
+                        ? PADDLE_BOOST_SPEED_PER_SECOND
+                        : PADDLE_SPEED_PER_SECOND;
+
+                const arrow_left = keys_pressed.includes("Left");
+                if (arrow_left && arrow_left) {
+                    ctx.paddle.x -= paddle_speed * ctx.delta_time_secs;
+                }
+
+                const arrow_right = keys_pressed.includes("Right");
+                if (arrow_right && arrow_right) {
+                    ctx.paddle.x += paddle_speed * ctx.delta_time_secs;
+                }
+            }
+
             const { render_ctx } = ctx;
             const paddle_r = paddle_rect(ctx.paddle);
 
@@ -488,8 +592,8 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             }
 
             // update ball
-            ctx.ball.x += ctx.ball.vx * ctx.delta_time;
-            ctx.ball.y += ctx.ball.vy * ctx.delta_time;
+            ctx.ball.x += ctx.ball.vx * ctx.delta_time_secs;
+            ctx.ball.y += ctx.ball.vy * ctx.delta_time_secs;
 
             const ball_r = ball_rect(ctx.ball);
 
@@ -523,19 +627,24 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                             ctx.ball.vx *= collision.vx;
                             break;
                         case "vertical":
-                            const paddle_center = ctx.paddle.x + ctx.paddle.w / 2;
+                            const paddle_center =
+                                ctx.paddle.x + ctx.paddle.w / 2;
                             const hit = ctx.ball.x - paddle_center;
                             const relative = hit / (ctx.paddle.w / 2);
                             const clamped = Math.max(-1, Math.min(1, relative));
                             const curved =
-                                Math.sign(clamped) * Math.pow(Math.abs(clamped), 1 / 3);
+                                Math.sign(clamped) *
+                                Math.pow(Math.abs(clamped), 1 / 3);
 
                             const angle = curved * 45;
                             const angle_rad = (angle * Math.PI) / 180;
 
-                            ctx.ball.vx = BALL_SPEED_PER_SECOND * Math.sin(angle_rad);
-                            ctx.ball.vy = BALL_SPEED_PER_SECOND * Math.cos(angle_rad);
-                            ctx.ball.y = ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
+                            ctx.ball.vx =
+                                BALL_SPEED_PER_SECOND * Math.sin(angle_rad);
+                            ctx.ball.vy =
+                                BALL_SPEED_PER_SECOND * Math.cos(angle_rad);
+                            ctx.ball.y =
+                                ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
 
                             break;
                     }
@@ -544,13 +653,17 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
 
             {
                 // animate bricks and delete bricks that are done animating
-                for (let i = 0; i < ctx.bricks.length;) {
+                for (let i = 0; i < ctx.bricks.length; ) {
                     brick_animate(ctx.bricks[i], ctx.elapsed_time);
 
                     const b = ctx.bricks[i];
                     if (b.hits >= b.lives && !b.animating) {
                         const brick_r = brick_rect(b);
-                        brick_particles_create(ctx.brick_particles, brick_r, ctx.elapsed_time);
+                        brick_particles_create(
+                            ctx.brick_particles,
+                            brick_r,
+                            ctx.elapsed_time,
+                        );
 
                         ctx.bricks.splice(i, 1);
                         continue;
@@ -582,7 +695,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
 
             {
                 // update brick particles
-                for (let i = 0; i < ctx.brick_particles.length;) {
+                for (let i = 0; i < ctx.brick_particles.length; ) {
                     const p = ctx.brick_particles[i];
 
                     if (p.timestamp + p.lifetime < ctx.elapsed_time) {
@@ -590,12 +703,15 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                         continue;
                     }
 
-                    const fraction = (ctx.elapsed_time - p.timestamp) / p.lifetime
+                    const fraction =
+                        (ctx.elapsed_time - p.timestamp) / p.lifetime;
                     p.alpha = 1 - fraction;
 
-                    const vx = p.vx * ctx.delta_time;
-                    const vy = p.vy * ctx.delta_time - p.gravity * ctx.delta_time;
-                    p.gravity += 200 * ctx.delta_time;
+                    const vx = p.vx * ctx.delta_time_secs;
+                    const vy =
+                        p.vy * ctx.delta_time_secs -
+                        p.gravity * ctx.delta_time_secs;
+                    p.gravity += 200 * ctx.delta_time_secs;
                     p.x += vx;
                     p.y += vy;
 
