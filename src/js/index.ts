@@ -1,4 +1,9 @@
-import { countdown_start, game_context_init, update_and_render, type Key_Code } from "./game.ts";
+import {
+    countdown_start,
+    game_context_init,
+    update_and_render,
+    type Key_Code,
+} from "./game.ts";
 
 const canvas_element = document.getElementById("canvas")! as HTMLCanvasElement;
 const game_ctx = game_context_init(canvas_element.getContext("2d")!);
@@ -99,22 +104,26 @@ window.addEventListener("DOMContentLoaded", set_canvas_size);
 window.addEventListener("resize", set_canvas_size);
 
 game_ctx.start_button_element.addEventListener("click", function() {
-    countdown_start(game_ctx)
+    countdown_start(game_ctx);
 });
 
 game_ctx.restart_button_element.addEventListener("click", function() {
-    countdown_start(game_ctx)
+    countdown_start(game_ctx);
 });
 
 game_ctx.resume_button_element.addEventListener("click", function() {
-    countdown_start(game_ctx)
+    countdown_start(game_ctx);
 });
+
+let last_frame_time = 0
 
 function frame(elapsed_time: number) {
     game_ctx.elapsed_time = elapsed_time;
+    game_ctx.delta_time = (elapsed_time - last_frame_time) / 1000;
+    last_frame_time = elapsed_time;
 
     // process_keys(game_ctx)
-    update_and_render(game_ctx, keys_pressed)
+    update_and_render(game_ctx, keys_pressed);
 
     requestAnimationFrame(frame);
 }

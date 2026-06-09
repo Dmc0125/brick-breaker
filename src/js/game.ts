@@ -1,6 +1,29 @@
-import { draw_rect, draw_circle, type Render_Context, type Color } from "./render.ts";
+import {
+    draw_rect,
+    draw_circle,
+    type Render_Context,
+    type Color,
+} from "./render.ts";
 
-type Game_Phase = "start" | "countdown_start" | "countdown_paused" | "playing" | "gameover" | "paused";
+const BALL_SPEED_PER_SECOND = 300;
+const PADDLE_SPEED_PER_SECOND = 300;
+const PADDLE_BOOST_SPEED_PER_SECOND = 500;
+const PARTICLE_MAX_SPEED_PER_SECOND = 40;
+
+type Rect = {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+};
+
+type Game_Phase =
+    | "start"
+    | "countdown_start"
+    | "countdown_paused"
+    | "playing"
+    | "gameover"
+    | "paused";
 
 type Ball = {
     radius: number;
@@ -10,12 +33,7 @@ type Ball = {
     vy: number;
 };
 
-function ball_rect(ball: Ball): {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-} {
+function ball_rect(ball: Ball): Rect {
     return {
         left: ball.x - ball.radius,
         right: ball.x + ball.radius,
@@ -32,12 +50,7 @@ type Paddle = {
     speed: number;
 };
 
-function paddle_rect(paddle: Paddle): {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-} {
+function paddle_rect(paddle: Paddle): Rect {
     return {
         left: paddle.x,
         right: paddle.x + paddle.w,
@@ -81,18 +94,13 @@ function brick_init(x: number, y: number, w: number, h: number): Brick {
 
         animating: false,
         anim_start_color: { r: 255, g: 255, b: 255, a: 1 },
-        anim_end_color: { r: 255, g: 255, b: 255, a: 0 },
+        anim_end_color: { r: 255, g: 255, b: 255, a: 1 },
         anim_start_time: 0,
         anim_duration: 200,
-    }
+    };
 }
 
-function brick_rect(brick: Brick): {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-} {
+function brick_rect(brick: Brick): Rect {
     return {
         left: brick.x,
         right: brick.x + brick.w,
@@ -137,10 +145,49 @@ function brick_animate(brick: Brick, time: number) {
     brick.color = { r, g, b, a };
 }
 
+type Brick_Particle = {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    gravity: number;
+
+    lifetime: number;
+    timestamp: number;
+    alpha: number;
+};
+
+function brick_particles_create(particles: Brick_Particle[], brick_rect: Rect, time: number) {
+    const count = 20
+    const x_range = brick_rect.right - brick_rect.left;
+    const y_range = brick_rect.top - brick_rect.bottom;
+
+    for (let i = 0; i < count; i++) {
+        const x = Math.random() * x_range + brick_rect.left;
+        const y = Math.random() * y_range + brick_rect.bottom;
+
+        const vx = (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
+        const vy = (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
+
+        particles.push({
+            x,
+            y,
+            vx,
+            vy,
+            gravity: 0,
+            lifetime: 400,
+            timestamp: time,
+            alpha: 1,
+        })
+    }
+}
+
 export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
 
 export type Game_Context = {
     elapsed_time: number;
+    // in seconds
+    delta_time: number;
     keys_records: Map<Key_Code, number>;
     game_phase: Game_Phase;
     render_ctx: Render_Context;
@@ -162,10 +209,16 @@ export type Game_Context = {
     ball: Ball;
     paddle: Paddle;
     bricks: Brick[];
-}
+    brick_particles: Brick_Particle[];
+};
 
-export function game_context_init(canvas_ctx: CanvasRenderingContext2D): Game_Context {
+export function game_context_init(
+    canvas_ctx: CanvasRenderingContext2D,
+): Game_Context {
     const ctx = {} as Game_Context;
+
+    ctx.elapsed_time = 0;
+    ctx.delta_time = 0;
 
     ctx.game_phase = "start";
     ctx.render_ctx = {
@@ -178,16 +231,17 @@ export function game_context_init(canvas_ctx: CanvasRenderingContext2D): Game_Co
         h: 10,
         x: 0,
         y: 0,
-        speed: 2,
-    }
+        speed: PADDLE_SPEED_PER_SECOND,
+    };
     ctx.ball = {
         radius: 5,
         x: 0,
         y: 0,
         vx: 0,
         vy: 0,
-    }
+    };
     ctx.bricks = [];
+    ctx.brick_particles = [];
 
     // ui
     ctx.start_button_element = document.getElementById(
@@ -216,7 +270,12 @@ export function countdown_start(ctx: Game_Context) {
         case "start":
         case "gameover":
             const render_ctx = ctx.render_ctx;
-            render_ctx.canvas_ctx.clearRect(0, 0, render_ctx.game_width, render_ctx.game_height);
+            render_ctx.canvas_ctx.clearRect(
+                0,
+                0,
+                render_ctx.game_width,
+                render_ctx.game_height,
+            );
 
             ctx.game_phase = "countdown_start";
             ctx.countdown = 3;
@@ -254,11 +313,12 @@ export function game_start(ctx: Game_Context, resume: boolean) {
         ctx.paddle.y = 20;
 
         ctx.ball.x = render_ctx.game_width / 2 - ctx.ball.radius;
-        ctx.ball.y = 20 + ctx.paddle.h + ctx.ball.radius;
-        ctx.ball.vx = Math.random() * 2 * (Math.random() > 0.5 ? 1 : -1);
-        ctx.ball.vy = 2;
+        ctx.ball.y = ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
+        ctx.ball.vx = Math.random() * BALL_SPEED_PER_SECOND * (Math.random() > 0.5 ? 1 : -1);
+        ctx.ball.vy = BALL_SPEED_PER_SECOND;
 
-        { // generate bricks
+        {
+            // generate bricks
             const rows = 5;
             const cols = 8;
 
@@ -292,20 +352,18 @@ export function game_start(ctx: Game_Context, resume: boolean) {
     ctx.countdown_element.classList.add("hidden");
 }
 
-type Collision_Rect = {
-    left: number;
-    top: number;
-    right: number;
-    bottom: number;
-};
 type Collision_Direction = "horizontal" | "vertical";
-type Collision_Result = { vx: number; vy: number, direction: Collision_Direction };
+type Collision_Result = {
+    vx: number;
+    vy: number;
+    direction: Collision_Direction;
+};
 
 // TODO: this does not work correclty all the time, sometimes r1 gets stuck
 // inside r2, r1 should get pushed out
 function check_collision(
-    r1: Collision_Rect,
-    r2: Collision_Rect,
+    r1: Rect,
+    r2: Rect,
 ): Collision_Result | null {
     const overlaps_x = r1.right > r2.left && r1.left < r2.right;
     const overlaps_y = r1.bottom < r2.top && r1.top > r2.bottom;
@@ -349,7 +407,8 @@ function can_press_key(ctx: Game_Context, key_code: Key_Code): boolean {
 }
 
 export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
-    { // process keyboard input
+    {
+        // process keyboard input
         if (keys_pressed.includes("R") && can_press_key(ctx, "R")) {
             ctx.keys_records.set("R", performance.now());
 
@@ -379,21 +438,21 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
         }
 
         if (ctx.game_phase === "playing") {
-            const space = keys_pressed.includes("Space")
-            if (ctx.paddle.speed === 2 && space) {
-                ctx.paddle.speed = 5;
-            } else if (ctx.paddle.speed === 5 && !space) {
-                ctx.paddle.speed = 2;
+            const space = keys_pressed.includes("Space");
+            if (ctx.paddle.speed === PADDLE_SPEED_PER_SECOND && space) {
+                ctx.paddle.speed = PADDLE_BOOST_SPEED_PER_SECOND;
+            } else if (ctx.paddle.speed === PADDLE_BOOST_SPEED_PER_SECOND && !space) {
+                ctx.paddle.speed = PADDLE_SPEED_PER_SECOND;
             }
 
-            const arrow_left = keys_pressed.includes("Left")
+            const arrow_left = keys_pressed.includes("Left");
             if (arrow_left && arrow_left) {
-                ctx.paddle.x -= ctx.paddle.speed;
+                ctx.paddle.x -= ctx.paddle.speed * ctx.delta_time;
             }
 
-            const arrow_right = keys_pressed.includes("Right")
+            const arrow_right = keys_pressed.includes("Right");
             if (arrow_right && arrow_right) {
-                ctx.paddle.x += ctx.paddle.speed;
+                ctx.paddle.x += ctx.paddle.speed * ctx.delta_time;
             }
         }
     }
@@ -429,8 +488,8 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             }
 
             // update ball
-            ctx.ball.x += ctx.ball.vx;
-            ctx.ball.y += ctx.ball.vy;
+            ctx.ball.x += ctx.ball.vx * ctx.delta_time;
+            ctx.ball.y += ctx.ball.vy * ctx.delta_time;
 
             const ball_r = ball_rect(ctx.ball);
 
@@ -468,13 +527,14 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                             const hit = ctx.ball.x - paddle_center;
                             const relative = hit / (ctx.paddle.w / 2);
                             const clamped = Math.max(-1, Math.min(1, relative));
-                            const curved = Math.sign(clamped) * Math.pow(Math.abs(clamped), 1 / 3);
+                            const curved =
+                                Math.sign(clamped) * Math.pow(Math.abs(clamped), 1 / 3);
 
                             const angle = curved * 45;
-                            const angle_rad = angle * Math.PI / 180;
+                            const angle_rad = (angle * Math.PI) / 180;
 
-                            ctx.ball.vx = 2 * Math.sin(angle_rad);
-                            ctx.ball.vy = 2 * Math.cos(angle_rad);
+                            ctx.ball.vx = BALL_SPEED_PER_SECOND * Math.sin(angle_rad);
+                            ctx.ball.vy = BALL_SPEED_PER_SECOND * Math.cos(angle_rad);
                             ctx.ball.y = ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
 
                             break;
@@ -489,6 +549,9 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
 
                     const b = ctx.bricks[i];
                     if (b.hits >= b.lives && !b.animating) {
+                        const brick_r = brick_rect(b);
+                        brick_particles_create(ctx.brick_particles, brick_r, ctx.elapsed_time);
+
                         ctx.bricks.splice(i, 1);
                         continue;
                     }
@@ -517,20 +580,35 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                 }
             }
 
+            {
+                // update brick particles
+                for (let i = 0; i < ctx.brick_particles.length;) {
+                    const p = ctx.brick_particles[i];
+
+                    if (p.timestamp + p.lifetime < ctx.elapsed_time) {
+                        ctx.brick_particles.splice(i, 1);
+                        continue;
+                    }
+
+                    const fraction = (ctx.elapsed_time - p.timestamp) / p.lifetime
+                    p.alpha = 1 - fraction;
+
+                    const vx = p.vx * ctx.delta_time;
+                    const vy = p.vy * ctx.delta_time - p.gravity * ctx.delta_time;
+                    p.gravity += 200 * ctx.delta_time;
+                    p.x += vx;
+                    p.y += vy;
+
+                    i++;
+                }
+            }
+
             render_ctx.canvas_ctx.clearRect(
                 0,
                 0,
                 render_ctx.game_width,
                 render_ctx.game_height,
             );
-
-            // render ball
-            draw_circle(render_ctx, ctx.ball.x, ctx.ball.y, ctx.ball.radius, {
-                r: 255,
-                g: 0,
-                b: 0,
-                a: 1,
-            });
 
             // render paddle
             draw_rect(
@@ -549,6 +627,25 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             for (const brick of ctx.bricks) {
                 draw_rect(render_ctx, brick, brick.color, 5);
             }
+
+            // render brick particles
+            for (const p of ctx.brick_particles) {
+                draw_circle(render_ctx, p.x, p.y, 1, {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                    a: p.alpha,
+                });
+            }
+
+            // render ball
+            draw_circle(render_ctx, ctx.ball.x, ctx.ball.y, ctx.ball.radius, {
+                r: 255,
+                g: 0,
+                b: 0,
+                a: 1,
+            });
+
             break;
     }
 }
