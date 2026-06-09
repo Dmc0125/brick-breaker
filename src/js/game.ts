@@ -298,7 +298,8 @@ type Collision_Rect = {
     right: number;
     bottom: number;
 };
-type Collision_Result = { vx: number; vy: number };
+type Collision_Direction = "horizontal" | "vertical";
+type Collision_Result = { vx: number; vy: number, direction: Collision_Direction };
 
 // TODO: this does not work correclty all the time, sometimes r1 gets stuck
 // inside r2, r1 should get pushed out
@@ -321,11 +322,19 @@ function check_collision(
     const min_x = Math.min(overlap_left, overlap_right);
     const min_y = Math.min(overlap_top, overlap_bottom);
 
+    const result: Collision_Result = { vx: 0, vy: 0, direction: "horizontal" };
+
     if (min_x < min_y) {
-        return { vx: -1, vy: 1 };
+        result.direction = "horizontal";
+        result.vx = -1;
+        result.vy = 1;
     } else {
-        return { vx: 1, vy: -1 };
+        result.direction = "vertical";
+        result.vx = 1;
+        result.vy = -1;
     }
+
+    return result;
 }
 
 const KEY_TIMEOUT = 200;
@@ -446,14 +455,30 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             }
 
             {
-                // TODO: change the ball direction based on where it hits the paddle
-
                 // check collisions between ctx.ball.and paddle
                 const collision = check_collision(ball_r, paddle_r);
 
                 if (collision) {
-                    ctx.ball.vx *= collision.vx;
-                    ctx.ball.vy *= collision.vy;
+                    switch (collision.direction) {
+                        case "horizontal":
+                            ctx.ball.vx *= collision.vx;
+                            break;
+                        case "vertical":
+                            const paddle_center = ctx.paddle.x + ctx.paddle.w / 2;
+                            const hit = ctx.ball.x - paddle_center;
+                            const relative = hit / (ctx.paddle.w / 2);
+                            const clamped = Math.max(-1, Math.min(1, relative));
+                            const curved = Math.sign(clamped) * Math.pow(Math.abs(clamped), 1 / 3);
+
+                            const angle = curved * 45;
+                            const angle_rad = angle * Math.PI / 180;
+
+                            ctx.ball.vx = 2 * Math.sin(angle_rad);
+                            ctx.ball.vy = 2 * Math.cos(angle_rad);
+                            ctx.ball.y = ctx.paddle.y + ctx.paddle.h + ctx.ball.radius;
+
+                            break;
+                    }
                 }
             }
 
