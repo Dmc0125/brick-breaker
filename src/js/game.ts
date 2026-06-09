@@ -46,6 +46,12 @@ function paddle_rect(paddle: Paddle): {
     };
 }
 
+const brick_color: Record<number, Color> = {
+    1: { r: 223, g: 190, b: 153, a: 1 },
+    2: { r: 236, g: 146, b: 145, a: 1 },
+    3: { r: 219, g: 83, b: 117, a: 1 },
+};
+
 type Brick = {
     x: number;
     y: number;
@@ -53,7 +59,33 @@ type Brick = {
     h: number;
     hits: number;
     lives: number;
+    color: Color;
+
+    // animation
+    animating: boolean;
+    anim_start_color: Color;
+    anim_end_color: Color;
+    anim_start_time: number;
+    anim_duration: number;
 };
+
+function brick_init(x: number, y: number, w: number, h: number): Brick {
+    return {
+        w,
+        h,
+        x,
+        y,
+        hits: 0,
+        lives: 3,
+        color: brick_color[3],
+
+        animating: false,
+        anim_start_color: { r: 255, g: 255, b: 255, a: 1 },
+        anim_end_color: { r: 255, g: 255, b: 255, a: 0 },
+        anim_start_time: 0,
+        anim_duration: 200,
+    }
+}
 
 function brick_rect(brick: Brick): {
     left: number;
@@ -69,11 +101,41 @@ function brick_rect(brick: Brick): {
     };
 }
 
-const brick_color: Record<number, Color> = {
-    1: { r: 223, g: 190, b: 153, a: 1 },
-    2: { r: 236, g: 146, b: 145, a: 1 },
-    3: { r: 219, g: 83, b: 117, a: 1 },
-};
+function brick_begin_animation(brick: Brick, time: number) {
+    if (brick.animating) {
+        return;
+    }
+
+    brick.animating = true;
+    brick.anim_start_color = brick.color;
+    brick.anim_start_time = time;
+}
+
+function brick_animate(brick: Brick, time: number) {
+    if (!brick.animating) {
+        return;
+    }
+
+    if (brick.anim_start_time + brick.anim_duration < time) {
+        brick.animating = false;
+        brick.color = brick.anim_end_color;
+        return;
+    }
+
+    const elapsed = time - brick.anim_start_time;
+    const progress = elapsed / brick.anim_duration;
+
+    function lerp(a: number, b: number, t: number) {
+        return a + (b - a) * t;
+    }
+
+    const r = lerp(brick.anim_start_color.r, brick.anim_end_color.r, progress);
+    const g = lerp(brick.anim_start_color.g, brick.anim_end_color.g, progress);
+    const b = lerp(brick.anim_start_color.b, brick.anim_end_color.b, progress);
+    const a = lerp(brick.anim_start_color.a, brick.anim_end_color.a, progress);
+
+    brick.color = { r, g, b, a };
+}
 
 export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
 
@@ -220,14 +282,7 @@ export function game_start(ctx: Game_Context, resume: boolean) {
                         row * (brick_height + padding) -
                         brick_height;
 
-                    ctx.bricks.push({
-                        x,
-                        y,
-                        w: brick_width,
-                        h: brick_height,
-                        hits: 0,
-                        lives: 3,
-                    });
+                    ctx.bricks.push(brick_init(x, y, brick_width, brick_height));
                 }
             }
         }
@@ -387,7 +442,6 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                 } else if (top > render_ctx.game_height) {
                     ctx.ball.y = render_ctx.game_height - ctx.ball.radius;
                     ctx.ball.vy = -ctx.ball.vy;
-
                 }
             }
 
@@ -404,6 +458,18 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             }
 
             {
+                // animate bricks and delete bricks that are done animating
+                for (let i = 0; i < ctx.bricks.length;) {
+                    brick_animate(ctx.bricks[i], ctx.elapsed_time);
+
+                    const b = ctx.bricks[i];
+                    if (b.hits >= b.lives && !b.animating) {
+                        ctx.bricks.splice(i, 1);
+                        continue;
+                    }
+                    i++;
+                }
+
                 // check collisions between ctx.ball.and bricks
                 for (const brick of ctx.bricks) {
                     const brick_r = brick_rect(brick);
@@ -414,8 +480,12 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                         ctx.ball.vy *= collision.vy;
 
                         brick.hits += 1;
+                        if (brick.hits < brick.lives) {
+                            brick.color = brick_color[brick.lives - brick.hits];
+                        }
+
                         if (brick.hits >= brick.lives) {
-                            ctx.bricks.splice(ctx.bricks.indexOf(brick), 1);
+                            brick_begin_animation(brick, ctx.elapsed_time);
                         }
                         break;
                     }
@@ -452,8 +522,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
 
             // render bricks
             for (const brick of ctx.bricks) {
-                const color = brick_color[brick.lives - brick.hits];
-                draw_rect(render_ctx, brick, color, 5);
+                draw_rect(render_ctx, brick, brick.color, 5);
             }
             break;
     }
