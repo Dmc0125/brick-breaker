@@ -1,20 +1,67 @@
+import { draw_rect, draw_circle, type Color } from "../render.ts";
 import {
-    draw_rect,
-    draw_circle,
-    type Render_Context,
-    type Color,
-} from "./render.ts";
+    type Brick,
+    type Brick_Particle,
+    brick_init,
+    PADDLE_BOOST_SPEED_PER_SECOND,
+    brick_animate,
+    brick_rect,
+    brick_particles_create,
+    brick_color,
+    brick_begin_animation,
+} from "./brick.ts";
 
 const BALL_SPEED_PER_SECOND = 300;
 const PADDLE_SPEED_PER_SECOND = 300;
-const PADDLE_BOOST_SPEED_PER_SECOND = 800;
-const PARTICLE_MAX_SPEED_PER_SECOND = 40;
 const BOOST_COOLDOWN_MS = 4000;
 const BOOST_DURATION_MS = 500;
 
-const PADDLE_COLOR = { r: 10, g: 255, b: 247, a: 1 };
+export type Context = {
+    canvas_ctx: CanvasRenderingContext2D;
+    game_width: number;
+    game_height: number;
 
-type Rect = {
+    elapsed_time: number;
+    delta_time_secs: number;
+};
+
+export const LOGICAL_WIDTH = 800;
+export const LOGICAL_HEIGHT = 600;
+
+export function context_init(canvas_element: HTMLCanvasElement): Context {
+    const ctx = {
+        canvas_ctx: canvas_element.getContext("2d")!,
+        game_width: LOGICAL_WIDTH,
+        game_height: LOGICAL_HEIGHT,
+
+        elapsed_time: 0,
+        delta_time_secs: 0,
+    } as Context;
+
+    function resize() {
+        const r = canvas_element.getBoundingClientRect();
+        canvas_element.width = r.width;
+        canvas_element.height = r.height;
+    }
+
+    window.addEventListener("DOMContentLoaded", resize);
+    window.addEventListener("resize", resize);
+
+    return ctx;
+}
+
+export function frame_begin(ctx: Context) {
+    const cctx = ctx.canvas_ctx;
+    const scale_x = cctx.canvas.width / ctx.game_width;
+    const scale_y = cctx.canvas.height / ctx.game_height;
+    cctx.scale(scale_x, scale_y);
+}
+
+export function frame_end(ctx: Context) {
+    ctx.canvas_ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+
+export type Rect = {
     left: number;
     top: number;
     right: number;
@@ -46,12 +93,319 @@ function ball_rect(ball: Ball): Rect {
     };
 }
 
-type Paddle = {
+const PADDLE_WIDTH = 80;
+const PADDLE_HEIGHT = 10;
+
+const PADDLE_COLOR = { r: 10, g: 255, b: 247, a: 1 };
+const PADDLE_BOOST_COLOR = { r: 239, g: 177, b: 0, a: 1 };
+
+const PADDLE_TRAIL_SPAWN_FREQUENCY_MS = 30;
+
+export type Boost_State = "boosting" | "recharging" | "full";
+
+type Paddle_Trail = {
+    x: number;
+    timestamp: number;
+    alpha: number;
+    animation_duration: number;
+};
+
+export type Paddle = {
     w: number;
     h: number;
     x: number;
     y: number;
+
+    speed: number;
+    color: Color;
+    animating_color: boolean;
+    animation_start_color: Color;
+    animation_end_color: Color;
+    animation_start_timestamp: number;
+    animation_duration: number;
+
+    last_trail_timestamp: number;
+    trail: Paddle_Trail[];
+
+    // boost
+    boost_state: Boost_State;
+    boost_state_ui?: Boost_State;
+    boost_last_used_timestamp: number;
+    boost_indicator_element?: HTMLDivElement;
+    boost_indicator_bar_element?: HTMLDivElement;
 };
+
+export function paddle_init(
+    boost_indicator_element?: HTMLDivElement,
+    boost_indicator_bar_element?: HTMLDivElement,
+): Paddle {
+    return {
+        w: PADDLE_WIDTH,
+        h: PADDLE_HEIGHT,
+        x: 0,
+        y: 0,
+
+        speed: PADDLE_SPEED_PER_SECOND,
+        color: PADDLE_COLOR,
+        animating_color: false,
+        animation_start_color: {} as Color,
+        animation_end_color: {} as Color,
+        animation_start_timestamp: 0,
+        animation_duration: 100,
+
+        last_trail_timestamp: 0,
+        trail: [],
+
+        boost_state: "recharging",
+        boost_last_used_timestamp: 0,
+        boost_indicator_element,
+        boost_indicator_bar_element,
+    };
+}
+
+export function paddle_spawn(paddle: Paddle, ctx: Context) {
+    paddle.w = PADDLE_WIDTH;
+    paddle.h = PADDLE_HEIGHT;
+    paddle.x = ctx.game_width / 2 - PADDLE_WIDTH / 2;
+    paddle.y = 20;
+    paddle.speed = PADDLE_SPEED_PER_SECOND;
+    paddle.color = PADDLE_COLOR;
+}
+
+export type Paddle_Input = {
+    left: boolean;
+    right: boolean;
+    space: boolean;
+};
+
+export function paddle_update(
+    paddle: Paddle,
+    ctx: Context,
+    input: Paddle_Input,
+) {
+    {
+        // animate color
+        if (paddle.animating_color) {
+            if (
+                paddle.animation_start_timestamp + paddle.animation_duration <
+                ctx.elapsed_time
+            ) {
+                paddle.animating_color = false;
+                paddle.color = paddle.animation_end_color;
+            } else {
+                const fraction =
+                    (ctx.elapsed_time - paddle.animation_start_timestamp) /
+                    paddle.animation_duration;
+
+                function lerp(a: number, b: number, t: number) {
+                    return a + (b - a) * t;
+                }
+
+                const r = lerp(
+                    paddle.animation_start_color.r,
+                    paddle.animation_end_color.r,
+                    fraction,
+                );
+                const g = lerp(
+                    paddle.animation_start_color.g,
+                    paddle.animation_end_color.g,
+                    fraction,
+                );
+                const b = lerp(
+                    paddle.animation_start_color.b,
+                    paddle.animation_end_color.b,
+                    fraction,
+                );
+                const a = lerp(
+                    paddle.animation_start_color.a,
+                    paddle.animation_end_color.a,
+                    fraction,
+                );
+                paddle.color = { r, g, b, a };
+            }
+        }
+    }
+
+    {
+        // animate trail
+        for (let i = 0; i < paddle.trail.length; ) {
+            const trail = paddle.trail[i];
+
+            if (trail.timestamp + trail.animation_duration < ctx.elapsed_time) {
+                paddle.trail.splice(i, 1);
+                continue;
+            }
+
+            const fraction =
+                (ctx.elapsed_time - trail.timestamp) / trail.animation_duration;
+            const alpha_range = 0.3;
+            trail.alpha = alpha_range * (1 - fraction);
+
+            i++;
+        }
+    }
+
+    function animation_begin(paddle: Paddle, end_color: Color) {
+        paddle.animating_color = true;
+        paddle.animation_start_timestamp = ctx.elapsed_time;
+        paddle.animation_start_color = paddle.color;
+        paddle.animation_end_color = end_color;
+    }
+
+    switch (paddle.boost_state) {
+        case "boosting":
+            if (
+                paddle.boost_last_used_timestamp + BOOST_DURATION_MS <
+                ctx.elapsed_time
+            ) {
+                paddle.boost_state = "recharging";
+                animation_begin(paddle, PADDLE_COLOR);
+            }
+
+            if (
+                paddle.last_trail_timestamp + PADDLE_TRAIL_SPAWN_FREQUENCY_MS <
+                ctx.elapsed_time
+            ) {
+                paddle.trail.push({
+                    x: paddle.x,
+                    timestamp: ctx.elapsed_time,
+                    alpha: 0.3,
+                    animation_duration: 400,
+                });
+                paddle.last_trail_timestamp = ctx.elapsed_time;
+            }
+
+            break;
+        case "recharging":
+            if (
+                paddle.boost_last_used_timestamp +
+                    BOOST_COOLDOWN_MS +
+                    BOOST_DURATION_MS <
+                ctx.elapsed_time
+            ) {
+                paddle.boost_state = "full";
+            }
+            break;
+        case "full":
+            if (input.space) {
+                paddle.boost_state = "boosting";
+                paddle.boost_last_used_timestamp = ctx.elapsed_time;
+                animation_begin(paddle, PADDLE_BOOST_COLOR);
+            }
+            break;
+    }
+
+    const speed =
+        paddle.boost_state === "boosting"
+            ? PADDLE_BOOST_SPEED_PER_SECOND
+            : PADDLE_SPEED_PER_SECOND;
+    const d = speed * ctx.delta_time_secs;
+
+    if (input.left) {
+        paddle.x -= d;
+        if (paddle.x < 0) {
+            paddle.x = 0;
+        }
+    }
+    if (input.right) {
+        paddle.x += d;
+        if (paddle.x + paddle.w > ctx.game_width) {
+            paddle.x = ctx.game_width - paddle.w;
+        }
+    }
+}
+
+export function paddle_render(ctx: Context, paddle: Paddle) {
+    // boost indicator
+    const color_transition = "background-color 200ms ease-in-out";
+
+    if (paddle.boost_state_ui !== paddle.boost_state) {
+        if (paddle.boost_state === "boosting") {
+            // started boosting
+            paddle.boost_state_ui = "boosting";
+
+            if (
+                paddle.boost_indicator_element &&
+                paddle.boost_indicator_bar_element
+            ) {
+                const boost_indicator_element = paddle.boost_indicator_element;
+                const boost_indicator_bar_element =
+                    paddle.boost_indicator_bar_element;
+                boost_indicator_bar_element.style.transition = `width ${BOOST_DURATION_MS}ms linear, ${color_transition}`;
+                boost_indicator_bar_element.classList.remove(
+                    "bg-cyan-500",
+                    "w-full",
+                );
+                boost_indicator_bar_element.classList.add(
+                    "bg-yellow-500",
+                    "w-0",
+                );
+                boost_indicator_element.classList.remove("bg-cyan-500/20");
+                boost_indicator_element.classList.add("bg-yellow-500/20");
+            }
+        } else if (paddle.boost_state === "recharging") {
+            // finished boosting
+            paddle.boost_state_ui = "recharging";
+
+            if (
+                paddle.boost_indicator_element &&
+                paddle.boost_indicator_bar_element
+            ) {
+                const boost_indicator_element = paddle.boost_indicator_element;
+                const boost_indicator_bar_element =
+                    paddle.boost_indicator_bar_element;
+                boost_indicator_bar_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms linear, ${color_transition}`;
+                boost_indicator_bar_element.classList.remove(
+                    "bg-yellow-500",
+                    "w-0",
+                );
+                boost_indicator_bar_element.classList.add(
+                    "bg-gray-500",
+                    "w-full",
+                );
+                boost_indicator_element.classList.remove("bg-yellow-500/20");
+                boost_indicator_element.classList.add("bg-gray-500/20");
+            }
+        } else if (paddle.boost_state === "full") {
+            // finished recharging
+            if (
+                paddle.boost_indicator_element &&
+                paddle.boost_indicator_bar_element
+            ) {
+                const boost_indicator_element = paddle.boost_indicator_element;
+                const boost_indicator_bar_element =
+                    paddle.boost_indicator_bar_element;
+                paddle.boost_state_ui = "full";
+                boost_indicator_bar_element.classList.remove("bg-gray-500");
+                boost_indicator_bar_element.classList.add("bg-cyan-500");
+                boost_indicator_element.classList.remove("bg-gray-500/20");
+                boost_indicator_element.classList.add("bg-cyan-500/20");
+            }
+        }
+    }
+
+    // trail
+
+    for (const trail of paddle.trail) {
+        const color = { ...PADDLE_BOOST_COLOR };
+        color.a = trail.alpha;
+        draw_rect(
+            ctx,
+            {
+                x: trail.x,
+                y: paddle.y,
+                w: paddle.w,
+                h: paddle.h,
+            },
+            color,
+            5,
+        );
+    }
+
+    // paddle
+
+    draw_rect(ctx, paddle, paddle.color, 5);
+}
 
 function paddle_rect(paddle: Paddle): Rect {
     return {
@@ -62,144 +416,14 @@ function paddle_rect(paddle: Paddle): Rect {
     };
 }
 
-const brick_color: Color[] = [
-    { r: 219, g: 83, b: 117, a: 1 },
-    { r: 236, g: 146, b: 145, a: 1 },
-    { r: 223, g: 190, b: 153, a: 1 },
-];
-
-type Brick = {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    hits: number;
-    lives: number;
-    color: Color;
-
-    // animation
-    animating: boolean;
-    anim_start_color: Color;
-    anim_end_color: Color;
-    anim_start_time: number;
-    anim_duration: number;
-};
-
-function brick_init(x: number, y: number, w: number, h: number): Brick {
-    return {
-        w,
-        h,
-        x,
-        y,
-        hits: 0,
-        lives: 3,
-        color: brick_color[0],
-
-        animating: false,
-        anim_start_color: { r: 255, g: 255, b: 255, a: 1 },
-        anim_end_color: { r: 255, g: 255, b: 255, a: 1 },
-        anim_start_time: 0,
-        anim_duration: 200,
-    };
-}
-
-function brick_rect(brick: Brick): Rect {
-    return {
-        left: brick.x,
-        right: brick.x + brick.w,
-        top: brick.y + brick.h,
-        bottom: brick.y,
-    };
-}
-
-function brick_begin_animation(brick: Brick, time: number) {
-    if (brick.animating) {
-        return;
-    }
-
-    brick.animating = true;
-    brick.anim_start_color = brick.color;
-    brick.anim_start_time = time;
-}
-
-function brick_animate(brick: Brick, time: number) {
-    if (!brick.animating) {
-        return;
-    }
-
-    if (brick.anim_start_time + brick.anim_duration < time) {
-        brick.animating = false;
-        brick.color = brick.anim_end_color;
-        return;
-    }
-
-    const elapsed = time - brick.anim_start_time;
-    const progress = elapsed / brick.anim_duration;
-
-    function lerp(a: number, b: number, t: number) {
-        return a + (b - a) * t;
-    }
-
-    const r = lerp(brick.anim_start_color.r, brick.anim_end_color.r, progress);
-    const g = lerp(brick.anim_start_color.g, brick.anim_end_color.g, progress);
-    const b = lerp(brick.anim_start_color.b, brick.anim_end_color.b, progress);
-    const a = lerp(brick.anim_start_color.a, brick.anim_end_color.a, progress);
-
-    brick.color = { r, g, b, a };
-}
-
-type Brick_Particle = {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    gravity: number;
-
-    lifetime: number;
-    timestamp: number;
-    alpha: number;
-};
-
-function brick_particles_create(
-    particles: Brick_Particle[],
-    brick_rect: Rect,
-    time: number,
-) {
-    const count = 20;
-    const x_range = brick_rect.right - brick_rect.left;
-    const y_range = brick_rect.top - brick_rect.bottom;
-
-    for (let i = 0; i < count; i++) {
-        const x = Math.random() * x_range + brick_rect.left;
-        const y = Math.random() * y_range + brick_rect.bottom;
-
-        const vx =
-            (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
-        const vy =
-            (Math.random() > 0.5 ? 1 : -1) * PARTICLE_MAX_SPEED_PER_SECOND;
-
-        particles.push({
-            x,
-            y,
-            vx,
-            vy,
-            gravity: 0,
-            lifetime: 400,
-            timestamp: time,
-            alpha: 1,
-        });
-    }
-}
-
 export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
-export type Boost_State = "boosting" | "recharging" | "full";
 
 export type Game_Context = {
     elapsed_time: number;
     delta_time_secs: number;
     keys_records: Map<Key_Code, number>;
     game_phase: Game_Phase;
-    render_ctx: Render_Context;
+    // render_ctx: Render_Context;
 
     // ui
     start_menu_element: HTMLDivElement;
@@ -238,9 +462,9 @@ export function game_context_init(
     ctx.delta_time_secs = 0;
 
     ctx.game_phase = "start";
-    ctx.render_ctx = {
-        canvas_ctx,
-    } as Render_Context;
+    // ctx.render_ctx = {
+    //     canvas_ctx,
+    // } as Render_Context;
     ctx.keys_records = new Map<Key_Code, number>();
 
     ctx.boost_indicator_element = document.getElementById(
@@ -255,6 +479,9 @@ export function game_context_init(
         h: 10,
         x: 0,
         y: 0,
+
+        speed: PADDLE_SPEED_PER_SECOND,
+        color: PADDLE_COLOR,
     };
     ctx.ball = {
         radius: 5,

@@ -3,7 +3,7 @@ import {
     game_context_init,
     update_and_render,
     type Key_Code,
-} from "./game.ts";
+} from "./game/game.ts";
 
 const canvas_element = document.getElementById("canvas")! as HTMLCanvasElement;
 const game_ctx = game_context_init(canvas_element.getContext("2d")!);
