@@ -12,6 +12,8 @@ const PARTICLE_MAX_SPEED_PER_SECOND = 40;
 const BOOST_COOLDOWN_MS = 4000;
 const BOOST_DURATION_MS = 500;
 
+const PADDLE_COLOR = { r: 10, g: 255, b: 247, a: 1 };
+
 type Rect = {
     left: number;
     top: number;
@@ -49,7 +51,6 @@ type Paddle = {
     h: number;
     x: number;
     y: number;
-    speed: number;
 };
 
 function paddle_rect(paddle: Paddle): Rect {
@@ -61,11 +62,11 @@ function paddle_rect(paddle: Paddle): Rect {
     };
 }
 
-const brick_color: Record<number, Color> = {
-    1: { r: 223, g: 190, b: 153, a: 1 },
-    2: { r: 236, g: 146, b: 145, a: 1 },
-    3: { r: 219, g: 83, b: 117, a: 1 },
-};
+const brick_color: Color[] = [
+    { r: 219, g: 83, b: 117, a: 1 },
+    { r: 236, g: 146, b: 145, a: 1 },
+    { r: 223, g: 190, b: 153, a: 1 },
+];
 
 type Brick = {
     x: number;
@@ -92,7 +93,7 @@ function brick_init(x: number, y: number, w: number, h: number): Brick {
         y,
         hits: 0,
         lives: 3,
-        color: brick_color[3],
+        color: brick_color[0],
 
         animating: false,
         anim_start_color: { r: 255, g: 255, b: 255, a: 1 },
@@ -219,6 +220,9 @@ export type Game_Context = {
     boost_indicator_element: HTMLDivElement;
     boost_indicator_inner_element: HTMLDivElement;
 
+    score: number;
+    score_text_element: HTMLParagraphElement;
+
     ball: Ball;
     paddle: Paddle;
     bricks: Brick[];
@@ -251,7 +255,6 @@ export function game_context_init(
         h: 10,
         x: 0,
         y: 0,
-        speed: PADDLE_SPEED_PER_SECOND,
     };
     ctx.ball = {
         radius: 5,
@@ -283,6 +286,9 @@ export function game_context_init(
     ctx.resume_button_element = document.getElementById(
         "resume-button",
     )! as HTMLButtonElement;
+    ctx.score_text_element = document.getElementById(
+        "score-text",
+    )! as HTMLParagraphElement;
 
     return ctx;
 }
@@ -326,13 +332,35 @@ export function countdown_start(ctx: Game_Context) {
 }
 
 function boost_indicator_start_recharge(ctx: Game_Context) {
-    ctx.boost_indicator_inner_element.classList.add("bg-gray-500");
-    ctx.boost_indicator_inner_element.classList.remove("bg-yellow-500");
-
     ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms, background-color 200ms ease-in-out`;
 
-    ctx.boost_indicator_inner_element.classList.remove("w-0");
-    ctx.boost_indicator_inner_element.classList.add("w-full");
+    ctx.boost_indicator_inner_element.classList.add("bg-gray-500", "w-full");
+    ctx.boost_indicator_inner_element.classList.remove("bg-yellow-500", "w-0");
+    ctx.boost_indicator_element.classList.add("bg-gray-500/20");
+    ctx.boost_indicator_element.classList.remove("bg-yellow-500/20");
+}
+
+function boost_indicator_use(ctx: Game_Context) {
+    ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_DURATION_MS}ms, background-color 200ms ease-in-out`;
+
+    ctx.boost_indicator_inner_element.classList.remove("bg-cyan-500", "w-full");
+    ctx.boost_indicator_inner_element.classList.add("bg-yellow-500", "w-0");
+    ctx.boost_indicator_element.classList.remove("bg-cyan-500/20");
+    ctx.boost_indicator_element.classList.add("bg-yellow-500/20");
+}
+
+function boost_indicator_full(ctx: Game_Context) {
+    ctx.boost_indicator_inner_element.classList.remove("bg-gray-500");
+    ctx.boost_indicator_inner_element.classList.add("bg-cyan-500");
+    ctx.boost_indicator_element.classList.remove("bg-gray-500/20");
+    ctx.boost_indicator_element.classList.add("bg-cyan-500/20");
+
+    ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms, background-color 200ms ease-in-out`;
+}
+
+function game_set_score(ctx: Game_Context, score: number) {
+    ctx.score = score;
+    ctx.score_text_element.innerText = `${score}`;
 }
 
 export function game_start(ctx: Game_Context, resume: boolean) {
@@ -392,6 +420,7 @@ export function game_start(ctx: Game_Context, resume: boolean) {
     // ui
     ctx.countdown_element.classList.add("hidden");
 
+    // reset boost indicator
     const transition_duration =
         ctx.boost_indicator_inner_element.style.transition;
     ctx.boost_indicator_inner_element.style.transition = `width 0s`;
@@ -399,8 +428,9 @@ export function game_start(ctx: Game_Context, resume: boolean) {
     ctx.boost_indicator_inner_element.classList.add("w-0");
     ctx.boost_indicator_inner_element.offsetWidth;
     ctx.boost_indicator_inner_element.style.transition = `width ${transition_duration}, background-color 200ms ease-in-out`;
-
     boost_indicator_start_recharge(ctx);
+
+    game_set_score(ctx, 0);
 }
 
 type Collision_Direction = "horizontal" | "vertical";
@@ -512,7 +542,6 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                         ) {
                             // boost end
                             ctx.boost_state = "recharging";
-
                             boost_indicator_start_recharge(ctx);
                         }
                         break;
@@ -525,15 +554,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                         ) {
                             // boost recharged
                             ctx.boost_state = "full";
-
-                            // ui
-                            ctx.boost_indicator_inner_element.classList.remove(
-                                "bg-gray-500",
-                            );
-                            ctx.boost_indicator_inner_element.classList.add(
-                                "bg-cyan-500",
-                            );
-                            ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_COOLDOWN_MS}ms, background-color 200ms ease-in-out`;
+                            boost_indicator_full(ctx);
                         }
                         break;
                     case "full":
@@ -541,22 +562,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                             // boost used
                             ctx.boost_state = "boosting";
                             ctx.boost_last_used_timestamp = ctx.elapsed_time;
-
-                            // ui
-                            ctx.boost_indicator_inner_element.classList.remove(
-                                "bg-cyan-500",
-                            );
-                            ctx.boost_indicator_inner_element.classList.add(
-                                "bg-yellow-500",
-                            );
-                            ctx.boost_indicator_inner_element.style.transition = `width ${BOOST_DURATION_MS}ms, background-color 200ms ease-in-out`;
-
-                            ctx.boost_indicator_inner_element.classList.remove(
-                                "w-full",
-                            );
-                            ctx.boost_indicator_inner_element.classList.add(
-                                "w-0",
-                            );
+                            boost_indicator_use(ctx);
                         }
                         break;
                 }
@@ -636,7 +642,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                                 Math.sign(clamped) *
                                 Math.pow(Math.abs(clamped), 1 / 3);
 
-                            const angle = curved * 45;
+                            const angle = curved * 55;
                             const angle_rad = (angle * Math.PI) / 180;
 
                             ctx.ball.vx =
@@ -680,9 +686,13 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
                         ctx.ball.vx *= collision.vx;
                         ctx.ball.vy *= collision.vy;
 
-                        brick.hits += 1;
                         if (brick.hits < brick.lives) {
-                            brick.color = brick_color[brick.lives - brick.hits];
+                            brick.hits += 1;
+                            game_set_score(ctx, ctx.score + 1);
+
+                            if (brick_color[brick.hits]) {
+                                brick.color = brick_color[brick.hits];
+                            }
                         }
 
                         if (brick.hits >= brick.lives) {
@@ -727,17 +737,7 @@ export function update_and_render(ctx: Game_Context, keys_pressed: Key_Code[]) {
             );
 
             // render paddle
-            draw_rect(
-                render_ctx,
-                ctx.paddle,
-                {
-                    r: 0,
-                    g: 255,
-                    b: 0,
-                    a: 1,
-                },
-                5,
-            );
+            draw_rect(render_ctx, ctx.paddle, PADDLE_COLOR, 5);
 
             // render bricks
             for (const brick of ctx.bricks) {
