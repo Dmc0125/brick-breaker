@@ -1,5 +1,6 @@
 ---
 import "../../styles/global.css";
+import Game from "../../components/game.astro";
 ---
 
 <html class="w-full min-h-[100vh]">
@@ -8,31 +9,7 @@ import "../../styles/global.css";
     </head>
 
     <body class="w-full min-h-[100vh] px-8 mt-10 bg-black">
-        <div class="w-full">
-            <div
-                class="w-full max-w-[800px] mx-auto flex justify-between items-center"
-            >
-                <div></div>
-                <div class="flex flex-col items-end gap-2">
-                    <p class="font-medium text-gray-200">Boost</p>
-                    <div
-                        id="boost-indicator"
-                        class="w-20 h-2 rounded-full bg-gray-500/20 relative"
-                    >
-                        <div
-                            id="boost-indicator-bar"
-                            class="absolute left-0 top-0 bottom-0 w-0 bg-gray-500 rounded-full"
-                        >
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <canvas
-                id="canvas"
-                class="w-full max-w-[800px] mx-auto mt-4 aspect-[4/3] rounded border border-cyan-500"
-            ></canvas>
-        </div>
+        <Game />
     </body>
 
     <script>

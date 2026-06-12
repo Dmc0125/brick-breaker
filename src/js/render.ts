@@ -14,14 +14,8 @@ export type Rect = {
     h: number;
 };
 
-export function draw_rect(
-    ctx: game.Context,
-    rect: Rect,
-    color: Color,
-    border_radius = 0,
-) {
+export function draw_rect(ctx: game.Context, rect: Rect, border_radius = 0) {
     const cctx = ctx.canvas_ctx;
-    cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
     const canvas_y = ctx.game_height - rect.y - rect.h;
 
     if (border_radius > 0) {

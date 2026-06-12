@@ -1,20 +1,6 @@
 import { draw_rect, draw_circle, type Color } from "../render.ts";
-import {
-    type Brick,
-    type Brick_Particle,
-    brick_init,
-    PADDLE_BOOST_SPEED_PER_SECOND,
-    brick_animate,
-    brick_rect,
-    brick_particles_create,
-    brick_color,
-    brick_begin_animation,
-} from "./brick.ts";
 
 const BALL_SPEED_PER_SECOND = 300;
-const PADDLE_SPEED_PER_SECOND = 300;
-const BOOST_COOLDOWN_MS = 4000;
-const BOOST_DURATION_MS = 500;
 
 export type Context = {
     canvas_ctx: CanvasRenderingContext2D;
@@ -61,6 +47,10 @@ export function frame_end(ctx: Context) {
     ctx.canvas_ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
+function lerp(a: number, b: number, t: number) {
+    return a + (b - a) * t;
+}
+
 export type Rect = {
     left: number;
     top: number;
@@ -96,6 +86,12 @@ function ball_rect(ball: Ball): Rect {
 const PADDLE_WIDTH = 80;
 const PADDLE_HEIGHT = 10;
 
+const PADDLE_SPEED_PER_SECOND = 300;
+const PADDLE_BOOST_SPEED_PER_SECOND = 800;
+
+const BOOST_COOLDOWN_MS = 4000;
+const BOOST_DURATION_MS = 500;
+
 const PADDLE_COLOR = { r: 10, g: 255, b: 247, a: 1 };
 const PADDLE_BOOST_COLOR = { r: 239, g: 177, b: 0, a: 1 };
 
@@ -107,7 +103,6 @@ type Paddle_Trail = {
     x: number;
     timestamp: number;
     alpha: number;
-    animation_duration: number;
 };
 
 export type Paddle = {
@@ -125,6 +120,8 @@ export type Paddle = {
     animation_duration: number;
 
     last_trail_timestamp: number;
+    trail_alpha: number;
+    trail_animation_duration: number;
     trail: Paddle_Trail[];
 
     // boost
@@ -154,6 +151,8 @@ export function paddle_init(
         animation_duration: 100,
 
         last_trail_timestamp: 0,
+        trail_alpha: 0.2,
+        trail_animation_duration: 400,
         trail: [],
 
         boost_state: "recharging",
@@ -197,10 +196,6 @@ export function paddle_update(
                     (ctx.elapsed_time - paddle.animation_start_timestamp) /
                     paddle.animation_duration;
 
-                function lerp(a: number, b: number, t: number) {
-                    return a + (b - a) * t;
-                }
-
                 const r = lerp(
                     paddle.animation_start_color.r,
                     paddle.animation_end_color.r,
@@ -231,14 +226,18 @@ export function paddle_update(
         for (let i = 0; i < paddle.trail.length; ) {
             const trail = paddle.trail[i];
 
-            if (trail.timestamp + trail.animation_duration < ctx.elapsed_time) {
+            if (
+                trail.timestamp + paddle.trail_animation_duration <
+                ctx.elapsed_time
+            ) {
                 paddle.trail.splice(i, 1);
                 continue;
             }
 
             const fraction =
-                (ctx.elapsed_time - trail.timestamp) / trail.animation_duration;
-            const alpha_range = 0.3;
+                (ctx.elapsed_time - trail.timestamp) /
+                paddle.trail_animation_duration;
+            const alpha_range = paddle.trail_alpha;
             trail.alpha = alpha_range * (1 - fraction);
 
             i++;
@@ -253,7 +252,7 @@ export function paddle_update(
     }
 
     switch (paddle.boost_state) {
-        case "boosting":
+        case "boosting": {
             if (
                 paddle.boost_last_used_timestamp + BOOST_DURATION_MS <
                 ctx.elapsed_time
@@ -269,14 +268,14 @@ export function paddle_update(
                 paddle.trail.push({
                     x: paddle.x,
                     timestamp: ctx.elapsed_time,
-                    alpha: 0.3,
-                    animation_duration: 400,
+                    alpha: paddle.trail_alpha,
                 });
                 paddle.last_trail_timestamp = ctx.elapsed_time;
             }
 
             break;
-        case "recharging":
+        }
+        case "recharging": {
             if (
                 paddle.boost_last_used_timestamp +
                     BOOST_COOLDOWN_MS +
@@ -286,13 +285,15 @@ export function paddle_update(
                 paddle.boost_state = "full";
             }
             break;
-        case "full":
+        }
+        case "full": {
             if (input.space) {
                 paddle.boost_state = "boosting";
                 paddle.boost_last_used_timestamp = ctx.elapsed_time;
                 animation_begin(paddle, PADDLE_BOOST_COLOR);
             }
             break;
+        }
     }
 
     const speed =
@@ -385,26 +386,27 @@ export function paddle_render(ctx: Context, paddle: Paddle) {
     }
 
     // trail
+    const cctx = ctx.canvas_ctx;
 
     for (const trail of paddle.trail) {
         const color = { ...PADDLE_BOOST_COLOR };
         color.a = trail.alpha;
+
+        cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
         draw_rect(
             ctx,
-            {
-                x: trail.x,
-                y: paddle.y,
-                w: paddle.w,
-                h: paddle.h,
-            },
-            color,
+            { x: trail.x, y: paddle.y, w: paddle.w, h: paddle.h },
             5,
         );
     }
 
     // paddle
 
-    draw_rect(ctx, paddle, paddle.color, 5);
+    const color = paddle.color;
+    cctx.shadowBlur = 25;
+    cctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+    cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+    draw_rect(ctx, paddle, 5);
 }
 
 function paddle_rect(paddle: Paddle): Rect {
@@ -414,6 +416,272 @@ function paddle_rect(paddle: Paddle): Rect {
         top: paddle.y + paddle.h,
         bottom: paddle.y,
     };
+}
+
+export const PARTICLE_MAX_SPEED_PER_SECOND = 40;
+
+export const brick_color: Color[] = [
+    { r: 219, g: 83, b: 117, a: 1 },
+    { r: 236, g: 146, b: 145, a: 1 },
+    { r: 223, g: 190, b: 153, a: 1 },
+];
+
+type Brick_State = "alive" | "exploding" | "particles" | "destroyed";
+
+export type Brick_Particle = {
+    size: number;
+
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+
+    angle: number;
+    spin_speed: number;
+    alpha: number;
+
+    anim_start_time: number;
+    anim_duration: number;
+};
+
+export type Brick = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    hits: number;
+    lives: number;
+    color: Color;
+    state: Brick_State;
+
+    // animation
+
+    animating: boolean;
+    anim_start_color: Color;
+    anim_end_color: Color;
+    anim_start_time: number;
+    anim_duration: number;
+};
+
+export function brick_init(x: number, y: number, w: number, h: number): Brick {
+    return {
+        w,
+        h,
+        x,
+        y,
+        hits: 0,
+        lives: 3,
+        color: brick_color[0],
+        state: "alive",
+
+        animating: false,
+        anim_start_color: { r: 255, g: 255, b: 255, a: 1 },
+        anim_end_color: { r: 255, g: 255, b: 255, a: 1 },
+        anim_start_time: 0,
+        anim_duration: 400,
+    };
+}
+
+export function brick_take_hit(ctx: Context, brick: Brick) {
+    if (brick.state !== "alive") {
+        return;
+    }
+
+    if (brick.hits < brick.lives) {
+        brick.hits += 1;
+    }
+
+    if (brick_color[brick.hits]) {
+        brick.color = brick_color[brick.hits];
+    }
+
+    if (brick.hits === brick.lives) {
+        brick.state = "exploding";
+        brick.animating = true;
+        brick.anim_start_color = brick.color;
+        brick.anim_end_color = { r: 255, g: 255, b: 255, a: 1 };
+        brick.anim_start_time = ctx.elapsed_time;
+    }
+}
+
+export function brick_update(
+    ctx: Context,
+    brick: Brick,
+    particles: Brick_Particle[],
+) {
+    switch (brick.state) {
+        case "exploding": {
+            if (brick.animating) {
+                if (
+                    brick.anim_start_time + brick.anim_duration <
+                    ctx.elapsed_time
+                ) {
+                    brick.state = "particles";
+                    brick.animating = false;
+                    brick.color = brick.anim_end_color;
+
+                    // spawn particles
+
+                    for (let i = 0; i < 15; i++) {
+                        const size = Math.random() * 10 + 5;
+
+                        const x = brick.x + Math.random() * brick.w;
+                        const y = brick.y + Math.random() * brick.h;
+
+                        // from 35 to 100 px per second
+                        let vx = 150 * (0.35 + Math.random() * 0.65);
+                        let vy = 150 * (0.35 + Math.random() * 0.65);
+                        if (Math.random() > 0.5) {
+                            vx *= -1;
+                        }
+                        if (Math.random() > 0.5) {
+                            vy *= -1;
+                        }
+
+                        const angle = Math.random() * Math.PI * 2;
+                        const spin_speed = (Math.random() - 0.5) * 1000;
+
+                        particles.push({
+                            size,
+                            x,
+                            y,
+                            vx,
+                            vy,
+                            angle,
+                            spin_speed,
+                            alpha: 1,
+                            anim_start_time: ctx.elapsed_time,
+                            anim_duration: 800,
+                        });
+                    }
+                } else {
+                    const fraction =
+                        (ctx.elapsed_time - brick.anim_start_time) /
+                        brick.anim_duration;
+                    const r = lerp(
+                        brick.anim_start_color.r,
+                        brick.anim_end_color.r,
+                        fraction,
+                    );
+                    const g = lerp(
+                        brick.anim_start_color.g,
+                        brick.anim_end_color.g,
+                        fraction,
+                    );
+                    const b = lerp(
+                        brick.anim_start_color.b,
+                        brick.anim_end_color.b,
+                        fraction,
+                    );
+                    const a = lerp(
+                        brick.anim_start_color.a,
+                        brick.anim_end_color.a,
+                        fraction,
+                    );
+                    brick.color = { r, g, b, a };
+                }
+            }
+            break;
+        }
+        case "particles": {
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+
+                const alpha_range = 1;
+                const fraction =
+                    1 -
+                    (ctx.elapsed_time - p.anim_start_time) / p.anim_duration;
+                const eased = 1 - Math.pow(1 - fraction, 2);
+
+                p.x += p.vx * eased * ctx.delta_time_secs;
+                p.y += p.vy * eased * ctx.delta_time_secs;
+                p.alpha = alpha_range * eased;
+                p.angle += p.spin_speed * ctx.delta_time_secs;
+            }
+
+            break;
+        }
+    }
+}
+
+export function brick_render(
+    ctx: Context,
+    brick: Brick,
+    particles: Brick_Particle[],
+) {
+    switch (brick.state) {
+        case "alive":
+        case "exploding": {
+            const cctx = ctx.canvas_ctx;
+            cctx.save();
+            const color = brick.color;
+            cctx.shadowBlur = 25;
+            cctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+            cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
+            draw_rect(ctx, brick, 5);
+            cctx.restore();
+            break;
+        }
+        case "particles": {
+            const cctx = ctx.canvas_ctx;
+            for (const p of particles) {
+                cctx.save();
+                cctx.translate(p.x, ctx.game_height - p.y - p.size);
+                cctx.rotate((p.angle * Math.PI) / 180);
+                cctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+                cctx.shadowBlur = 5;
+
+                cctx.beginPath();
+                cctx.fillRect(p.size / -2, p.size / -2, p.size, p.size);
+                cctx.fill();
+
+                cctx.restore();
+            }
+
+            break;
+        }
+    }
+}
+
+export function brick_rect(brick: Brick): Rect {
+    return {
+        left: brick.x,
+        right: brick.x + brick.w,
+        top: brick.y + brick.h,
+        bottom: brick.y,
+    };
+}
+
+export function brick_begin_animation(brick: Brick, time: number) {
+    if (brick.animating) {
+        return;
+    }
+
+    brick.animating = true;
+    brick.anim_start_color = brick.color;
+    brick.anim_start_time = time;
+}
+
+export function brick_animate(brick: Brick, time: number) {
+    if (!brick.animating) {
+        return;
+    }
+
+    if (brick.anim_start_time + brick.anim_duration < time) {
+        brick.animating = false;
+        brick.color = brick.anim_end_color;
+        return;
+    }
+
+    const elapsed = time - brick.anim_start_time;
+    const progress = elapsed / brick.anim_duration;
+
+    const r = lerp(brick.anim_start_color.r, brick.anim_end_color.r, progress);
+    const g = lerp(brick.anim_start_color.g, brick.anim_end_color.g, progress);
+    const b = lerp(brick.anim_start_color.b, brick.anim_end_color.b, progress);
+    const a = lerp(brick.anim_start_color.a, brick.anim_end_color.a, progress);
+
+    brick.color = { r, g, b, a };
 }
 
 export type Key_Code = "Left" | "Right" | "R" | "O" | "P" | "Space";
