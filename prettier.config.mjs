@@ -1,11 +1,10 @@
-import { type Config } from "prettier";
-
-const config: Config = {
-    printWidth: 80,
+/** @type {import("prettier").Config} */
+const config = {
+    printWidth: 100,
     tabWidth: 4,
     trailingComma: "all",
     singleQuote: false,
-    semi: true,
+    semi: false,
     bracketSpacing: true,
     plugins: ["prettier-plugin-astro"],
     overrides: [
@@ -16,6 +15,6 @@ const config: Config = {
             },
         },
     ],
-};
+}
 
-export default config;
+export default config

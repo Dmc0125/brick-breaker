@@ -1,102 +1,124 @@
 ---
-import "../styles/global.css";
+import "../styles/global.css"
+import Game from "../components/game.astro"
 ---
 
 <html class="w-full min-h-screen">
     <head>
         <title>Astro</title>
     </head>
-    <body class="w-full min-h-screen px-8 mt-10 bg-black">
-        <div class="w-full max-w-[800px] mx-auto flex justify-between">
-            <div class="flex items-center gap-8">
-                <div class="flex flex-col gap-1">
-                    <p class="text-gray-400 text-sm font-medium uppercase">
-                        Score
-                    </p>
-                    <p id="score-text" class="text-cyan-400">0</p>
-                </div>
-                <!-- <div class="flex flex-col gap-1"> -->
-                <!--     <p class="text-gray-400 text-sm font-medium uppercase"> -->
-                <!--         Level -->
-                <!--     </p> -->
-                <!--     <p class="text-cyan-400">1</p> -->
-                <!-- </div> -->
-            </div>
-
-            <div class="flex flex-col items-end gap-1">
-                <p class="text-gray-400 text-sm font-medium uppercase">Boost</p>
-                <div
-                    id="boost-indicator"
-                    class="relative w-20 h-2 rounded-full bg-gray-500/20 transition-all"
-                >
-                    <div
-                        id="boost-indicator-inner"
-                        class="absolute left-0 top-0 h-2 rounded-full bg-gray-500 w-0 transition-all"
-                    >
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="relative w-full max-w-[800px] mx-auto mt-4">
-            <canvas
-                id="canvas"
-                class="w-full max-w-[800px] aspect-[3/2] rounded border border-cyan-500"
-            ></canvas>
-
-            <div
-                id="start-menu"
-                class="absolute inset-0 flex flex-col items-center justify-center gap-4"
-            >
-                <h1 class="text-cyan-200 text-3xl font-bold">Brick breaker</h1>
-
-                <button
-                    id="start-button"
-                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
-                >
-                    Start Breaking
-                </button>
-            </div>
-
-            <div
-                id="countdown"
-                class="hidden absolute inset-0 flex items-center justify-center text-cyan-200 text-3xl font-bold"
-            >
-            </div>
-
-            <div
-                id="gameover"
-                class="hidden absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/10 rounded"
-                style="backdrop-filter: blur(5px)"
-            >
-                <p class="text-red-400 text-3xl font-bold text-shadow-lg">
-                    Game Over
-                </p>
-                <button
-                    id="restart-button"
-                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
-                >
-                    Restart
-                </button>
-            </div>
-
-            <div
-                id="paused"
-                class="hidden absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/10 rounded"
-                style="backdrop-filter: blur(5px)"
-            >
-                <p class="text-cyan-200 text-3xl font-bold text-shadow-lg">
-                    Paused
-                </p>
-                <button
-                    id="resume-button"
-                    class="bg-cyan-500 text-white px-4 py-2 rounded font-semibold"
-                >
-                    Resume
-                </button>
-            </div>
-        </div>
+    <body class="w-full min-h-screen px-8 pt-10 bg-black">
+        <Game />
     </body>
 </html>
 
-<script src="../js/index.ts"></script>
+<script>
+    import {
+        context_init,
+        frame_begin,
+        frame_end,
+        paddle_init,
+        paddle_render,
+        paddle_spawn,
+        paddle_update,
+        type Paddle_Input,
+        ball_init,
+        ball_update,
+        ball_render,
+        type Brick,
+        brick_init,
+        brick_render,
+        brick_update,
+        type Brick_Particle,
+        brick_particles_update,
+        brick_particles_render,
+    } from "../js/game/game.ts"
+
+    const canvas = document.getElementById("canvas")! as HTMLCanvasElement
+    const ctx = context_init(canvas)
+
+    const paddle_input: Paddle_Input = {
+        left: false,
+        right: false,
+        space: false,
+    }
+
+    window.addEventListener("keydown", function (e) {
+        if (e.key === "ArrowLeft") paddle_input.left = true
+        if (e.key === "ArrowRight") paddle_input.right = true
+        if (e.key === " ") {
+            e.preventDefault()
+            paddle_input.space = true
+        }
+    })
+
+    window.addEventListener("keyup", function (e) {
+        if (e.key === "ArrowLeft") paddle_input.left = false
+        if (e.key === "ArrowRight") paddle_input.right = false
+        if (e.key === " ") paddle_input.space = false
+    })
+
+    const boost_indicator_element = document.getElementById("boost-indicator")! as HTMLDivElement
+    const boost_indicator_bar_element = document.getElementById(
+        "boost-indicator-bar",
+    )! as HTMLDivElement
+    const paddle = paddle_init(boost_indicator_element, boost_indicator_bar_element)
+    paddle_spawn(paddle, ctx)
+
+    const bricks: Brick[] = []
+    const brick_particles: Brick_Particle[] = []
+
+    {
+        // spawn bricks
+        const rows = 5
+        const cols = 8
+
+        const walls_margin = 20
+        const padding = 20
+        const brick_height = 20
+        const usable_width = ctx.game_width - walls_margin * 2 - padding * (cols - 1)
+        const brick_width = usable_width / cols
+
+        for (let row = 0; row < rows; row++) {
+            for (let col = 0; col < cols; col++) {
+                const x = walls_margin + col * (brick_width + padding)
+                const y =
+                    ctx.game_height - walls_margin - row * (brick_height + padding) - brick_height
+                bricks.push(brick_init(x, y, brick_width, brick_height))
+            }
+        }
+    }
+
+    const ball = ball_init(ctx, paddle)
+
+    let last_frame_time = 0
+
+    function frame(elapsed_time: number) {
+        ctx.elapsed_time = elapsed_time
+        ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+        last_frame_time = elapsed_time
+
+        ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
+        frame_begin(ctx)
+
+        paddle_update(paddle, ctx, paddle_input)
+        ball_update(ctx, ball, paddle, bricks)
+        for (const brick of bricks) {
+            brick_update(ctx, brick, brick_particles)
+        }
+        brick_particles_update(ctx, brick_particles)
+
+        paddle_render(ctx, paddle)
+        ball_render(ctx, ball)
+        for (const brick of bricks) {
+            brick_render(ctx, brick)
+        }
+        brick_particles_render(ctx, brick_particles)
+
+        frame_end(ctx)
+
+        requestAnimationFrame(frame)
+    }
+
+    requestAnimationFrame(frame)
+</script>

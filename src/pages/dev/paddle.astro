@@ -1,6 +1,6 @@
 ---
-import "../../styles/global.css";
-import Game from "../../components/game.astro";
+import "../../styles/global.css"
+import Game from "../../components/game.astro"
 ---
 
 <html class="w-full min-h-[100vh]">
@@ -22,63 +22,60 @@ import Game from "../../components/game.astro";
             paddle_spawn,
             paddle_update,
             type Paddle_Input,
-        } from "../../js/game/game.ts";
+        } from "../../js/game/game.ts"
 
-        const canvas = document.getElementById("canvas")! as HTMLCanvasElement;
-        const ctx = context_init(canvas);
+        const canvas = document.getElementById("canvas")! as HTMLCanvasElement
+        const ctx = context_init(canvas)
 
         const boost_indicator_element = document.getElementById(
             "boost-indicator",
-        )! as HTMLDivElement;
+        )! as HTMLDivElement
         const boost_indicator_bar_element = document.getElementById(
             "boost-indicator-bar",
-        )! as HTMLDivElement;
+        )! as HTMLDivElement
 
-        const paddle = paddle_init(
-            boost_indicator_element,
-            boost_indicator_bar_element,
-        );
-        paddle_spawn(paddle, ctx);
+        const paddle = paddle_init(boost_indicator_element, boost_indicator_bar_element)
+        paddle_spawn(paddle, ctx)
 
         const paddle_input: Paddle_Input = {
             left: false,
             right: false,
             space: false,
-        };
-
-        window.addEventListener("keydown", function (e) {
-            if (e.key === "ArrowLeft") paddle_input.left = true;
-            if (e.key === "ArrowRight") paddle_input.right = true;
-            if (e.key === " ") {
-                e.preventDefault();
-                paddle_input.space = true;
-            }
-        });
-
-        window.addEventListener("keyup", function (e) {
-            if (e.key === "ArrowLeft") paddle_input.left = false;
-            if (e.key === "ArrowRight") paddle_input.right = false;
-            if (e.key === " ") paddle_input.space = false;
-        });
-
-        let last_frame_time = 0;
-
-        function frame(elapsed_time: number) {
-            ctx.elapsed_time = elapsed_time;
-            ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000;
-            last_frame_time = elapsed_time;
-
-            ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height);
-            frame_begin(ctx);
-
-            paddle_update(paddle, ctx, paddle_input);
-            paddle_render(ctx, paddle);
-
-            frame_end(ctx);
-
-            requestAnimationFrame(frame);
         }
 
-        requestAnimationFrame(frame);
+        window.addEventListener("keydown", function (e) {
+            if (e.key === "ArrowLeft") paddle_input.left = true
+            if (e.key === "ArrowRight") paddle_input.right = true
+            if (e.key === " ") {
+                e.preventDefault()
+                paddle_input.space = true
+            }
+        })
+
+        window.addEventListener("keyup", function (e) {
+            if (e.key === "ArrowLeft") paddle_input.left = false
+            if (e.key === "ArrowRight") paddle_input.right = false
+            if (e.key === " ") paddle_input.space = false
+        })
+
+        let last_frame_time = 0
+
+        function frame(elapsed_time: number) {
+            ctx.elapsed_time = elapsed_time
+            ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+            last_frame_time = elapsed_time
+
+            ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
+            frame_begin(ctx)
+
+            paddle_update(paddle, ctx, paddle_input)
+            paddle_render(ctx, paddle)
+
+            frame_end(ctx)
+
+            requestAnimationFrame(frame)
+        }
+
+        requestAnimationFrame(frame)
     </script>
 </html>

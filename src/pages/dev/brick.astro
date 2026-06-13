@@ -1,6 +1,6 @@
 ---
-import "../../styles/global.css";
-import Game from "../../components/game.astro";
+import "../../styles/global.css"
+import Game from "../../components/game.astro"
 ---
 
 <html class="w-full min-h-[100vh]">
@@ -22,47 +22,45 @@ import Game from "../../components/game.astro";
             brick_render,
             brick_take_hit,
             type Brick_Particle,
-        } from "../../js/game/game.ts";
+        } from "../../js/game/game.ts"
 
-        const canvas = document.getElementById("canvas")! as HTMLCanvasElement;
-        const ctx = context_init(canvas);
+        const canvas = document.getElementById("canvas")! as HTMLCanvasElement
+        const ctx = context_init(canvas)
 
-        const brick_w = 80;
-        const brick_h = 40;
-        const brick_x = ctx.game_width / 2 - brick_w / 2;
-        const brick_y = ctx.game_height / 2 - brick_h / 2;
+        const brick_w = 80
+        const brick_h = 40
+        const brick_x = ctx.game_width / 2 - brick_w / 2
+        const brick_y = ctx.game_height / 2 - brick_h / 2
 
-        let brick = brick_init(brick_x, brick_y, brick_w, brick_h);
-        const particles: Brick_Particle[] = [];
+        let brick = brick_init(brick_x, brick_y, brick_w, brick_h)
+        const particles: Brick_Particle[] = []
 
         window.addEventListener("keydown", function (e) {
-            if (e.key === "h") brick_take_hit(ctx, brick);
+            if (e.key === "h") brick_take_hit(ctx, brick)
             if (e.key === "r") {
-                brick = brick_init(brick_x, brick_y, brick_w, brick_h);
-                particles.length = 0;
+                brick = brick_init(brick_x, brick_y, brick_w, brick_h)
+                particles.length = 0
             }
-        });
+        })
 
-        // window.addEventListener("keyup", function (e) {});
-
-        let last_frame_time = 0;
+        let last_frame_time = 0
 
         function frame(elapsed_time: number) {
-            ctx.elapsed_time = elapsed_time;
-            ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000;
-            last_frame_time = elapsed_time;
+            ctx.elapsed_time = elapsed_time
+            ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+            last_frame_time = elapsed_time
 
-            ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height);
-            frame_begin(ctx);
+            ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
+            frame_begin(ctx)
 
-            brick_update(ctx, brick, particles);
-            brick_render(ctx, brick, particles);
+            brick_update(ctx, brick, particles)
+            brick_render(ctx, brick, particles)
 
-            frame_end(ctx);
+            frame_end(ctx)
 
-            requestAnimationFrame(frame);
+            requestAnimationFrame(frame)
         }
 
-        requestAnimationFrame(frame);
+        requestAnimationFrame(frame)
     </script>
 </html>

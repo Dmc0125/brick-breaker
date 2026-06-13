@@ -1,37 +1,37 @@
 {
-  "name": "brick-breaker",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "astro dev",
-    "build": "astro build",
-    "preview": "astro preview",
-    "prepare": "husky"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "devEngines": {
-    "packageManager": {
-      "name": "pnpm",
-      "version": "^11.0.6",
-      "onFail": "download"
+    "name": "brick-breaker",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "dev": "astro dev",
+        "build": "astro build",
+        "preview": "astro preview",
+        "prepare": "husky"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "MIT",
+    "devEngines": {
+        "packageManager": {
+            "name": "pnpm",
+            "version": "^11.0.6",
+            "onFail": "download"
+        }
+    },
+    "type": "module",
+    "dependencies": {
+        "@tailwindcss/vite": "^4.3.0",
+        "astro": "^6.3.7",
+        "prettier": "^3.8.3",
+        "prettier-plugin-astro": "^0.14.1",
+        "tailwindcss": "^4.3.0"
+    },
+    "devDependencies": {
+        "husky": "^9.1.7",
+        "lint-staged": "^17.0.7"
+    },
+    "lint-staged": {
+        "*.{js,jsx,ts,tsx,css,md,astro}": "prettier --write"
     }
-  },
-  "type": "module",
-  "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "astro": "^6.3.7",
-    "prettier": "^3.8.3",
-    "prettier-plugin-astro": "^0.14.1",
-    "tailwindcss": "^4.3.0"
-  },
-  "devDependencies": {
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.7"
-  },
-  "lint-staged": {
-    "*.{js,jsx,ts,tsx,css,md,astro}": "prettier --write"
-  }
 }
