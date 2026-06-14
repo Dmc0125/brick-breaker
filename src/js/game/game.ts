@@ -49,6 +49,86 @@ function lerp(a: number, b: number, t: number) {
     return a + (b - a) * t
 }
 
+type Animation_Easing = "linear" | "ease_out"
+
+type Animation_State = "inactive" | "delaying" | "active"
+
+type Animation = {
+    state: Animation_State
+    start_time: number
+    duration: number
+    delay: number
+    easing: Animation_Easing
+    value_start: number
+    value_end: number
+    value: number
+}
+
+function animation_init(
+    value_start: number,
+    value_end: number,
+    duration: number,
+    delay = 0,
+    easing: Animation_Easing = "linear",
+): Animation {
+    return {
+        state: "inactive",
+        start_time: 0,
+        duration,
+        delay,
+        easing,
+        value_start,
+        value_end,
+        value: value_start,
+    }
+}
+
+function animation_begin(animation: Animation, time: number) {
+    if (animation.delay > 0) {
+        animation.state = "delaying"
+    } else {
+        animation.state = "active"
+    }
+    animation.start_time = time
+    animation.value = animation.value_start
+}
+
+function animation_update(animation: Animation, time: number) {
+    switch (animation.state) {
+        case "inactive":
+            return
+        case "delaying": {
+            if (animation.start_time + animation.delay < time) {
+                animation.state = "active"
+            } else {
+                return
+            }
+        }
+        case "active": {
+            const start_time = animation.start_time + animation.delay
+
+            if (start_time + animation.duration < time) {
+                animation.state = "inactive"
+                animation.value = animation.value_end
+                return
+            }
+
+            let fraction = (time - start_time) / animation.duration
+            switch (animation.easing) {
+                case "linear":
+                    break
+                case "ease_out": {
+                    fraction = 1 - Math.pow(1 - fraction, 2)
+                    break
+                }
+            }
+
+            const range = animation.value_end - animation.value_start
+            animation.value = animation.value_start + fraction * range
+        }
+    }
+}
+
 const PADDLE_WIDTH = 80
 const PADDLE_HEIGHT = 10
 
@@ -90,6 +170,9 @@ export type Paddle = {
     trail_animation_duration: number
     trail: Paddle_Trail[]
 
+    // bounce
+    bounce_animation: Animation[]
+
     // boost
     boost_state: Boost_State
     boost_state_ui?: Boost_State
@@ -102,6 +185,9 @@ export function paddle_init(
     boost_indicator_element?: HTMLDivElement,
     boost_indicator_bar_element?: HTMLDivElement,
 ): Paddle {
+    const bounce_down_animation = animation_init(0, -10, 100, 0, "linear")
+    const bounce_up_animation = animation_init(-10, 0, 100, 100, "linear")
+
     return {
         w: PADDLE_WIDTH,
         h: PADDLE_HEIGHT,
@@ -121,6 +207,8 @@ export function paddle_init(
         trail_animation_duration: 400,
         trail: [],
 
+        bounce_animation: [bounce_down_animation, bounce_up_animation],
+
         boost_state: "recharging",
         boost_last_used_timestamp: 0,
         boost_indicator_element,
@@ -137,6 +225,11 @@ export function paddle_spawn(paddle: Paddle, ctx: Context) {
     paddle.color = PADDLE_COLOR
 }
 
+export function paddle_bounce(paddle: Paddle, time: number) {
+    animation_begin(paddle.bounce_animation[0], time)
+    animation_begin(paddle.bounce_animation[1], time)
+}
+
 export type Paddle_Input = {
     left: boolean
     right: boolean
@@ -144,6 +237,12 @@ export type Paddle_Input = {
 }
 
 export function paddle_update(paddle: Paddle, ctx: Context, input: Paddle_Input) {
+    {
+        // animate bounce
+        animation_update(paddle.bounce_animation[0], ctx.elapsed_time)
+        animation_update(paddle.bounce_animation[1], ctx.elapsed_time)
+    }
+
     {
         // animate color
         if (paddle.animating_color) {
@@ -318,6 +417,15 @@ export function paddle_render(ctx: Context, paddle: Paddle) {
         cctx.restore()
     }
 
+    // bounce
+    let offset = 0
+    if (paddle.bounce_animation[0].state === "active") {
+        offset = paddle.bounce_animation[0].value
+    }
+    if (paddle.bounce_animation[1].state === "active") {
+        offset = paddle.bounce_animation[1].value
+    }
+
     // paddle
 
     const color = paddle.color
@@ -325,7 +433,8 @@ export function paddle_render(ctx: Context, paddle: Paddle) {
     cctx.shadowBlur = 25
     cctx.shadowColor = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`
     cctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`
-    draw_rect(ctx, paddle, 5)
+    const paddle_y = paddle.y + offset
+    draw_rect(ctx, { ...paddle, y: paddle_y }, 5)
     cctx.restore()
 }
 
@@ -692,6 +801,8 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
                 ball.y = p_top + BALL_RADIUS
                 ball.vx = BALL_SPEED_PER_SECOND * Math.sin(angle_rad)
                 ball.vy = BALL_SPEED_PER_SECOND * Math.cos(angle_rad)
+
+                paddle_bounce(paddle, ctx.elapsed_time)
             }
         }
     })()

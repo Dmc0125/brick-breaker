@@ -22,6 +22,7 @@ import Game from "../../components/game.astro"
             paddle_spawn,
             paddle_update,
             type Paddle_Input,
+            paddle_bounce,
         } from "../../js/game/game.ts"
 
         const canvas = document.getElementById("canvas")! as HTMLCanvasElement
@@ -50,6 +51,7 @@ import Game from "../../components/game.astro"
                 e.preventDefault()
                 paddle_input.space = true
             }
+            if (e.key === "b") paddle_bounce(paddle, ctx.elapsed_time)
         })
 
         window.addEventListener("keyup", function (e) {
