@@ -15,12 +15,50 @@ import Game from "../components/game.astro"
 <script>
     import * as game from "../js/game/game.ts"
 
+    type Game_State = "start" | "starting" | "playing" | "paused" | "gameover"
+    let game_state: Game_State = "start"
+
+    const start_button = document.getElementById("start-button")! as HTMLButtonElement
+    const resume_button = document.getElementById("resume-button")! as HTMLButtonElement
+    const start_again_button = document.getElementById("start-again-button")! as HTMLButtonElement
+
     const canvas = document.getElementById("canvas")! as HTMLCanvasElement
     const announcer_text_element = document.getElementById(
         "announcer-text",
     )! as HTMLParagraphElement
     const score_text_element = document.getElementById("score-text")! as HTMLParagraphElement
+    const boost_indicator_element = document.getElementById("boost-indicator")! as HTMLDivElement
+    const boost_indicator_bar_element = document.getElementById(
+        "boost-indicator-bar",
+    )! as HTMLDivElement
+
     const ctx = game.context_init(canvas, announcer_text_element, score_text_element)
+    const paddle = game.paddle_init(boost_indicator_element, boost_indicator_bar_element)
+    let ball: game.Ball | null = null
+    const bricks: game.Brick[] = []
+    const brick_particles: game.Brick_Particle[] = []
+
+    start_button.addEventListener("click", function () {
+        game_state = "starting"
+        const start_screen = document.getElementById("start-screen")! as HTMLDivElement
+        start_screen.classList.add("hidden")
+    })
+
+    resume_button.addEventListener("click", function () {
+        if (game_state === "paused") {
+            game_state = "playing"
+            const pause_screen = document.getElementById("pause-screen")! as HTMLDivElement
+            pause_screen.classList.add("hidden")
+        }
+    })
+
+    start_again_button.addEventListener("click", function () {
+        if (game_state === "gameover") {
+            game_state = "starting"
+            const gameover_screen = document.getElementById("gameover-screen")! as HTMLDivElement
+            gameover_screen.classList.add("hidden")
+        }
+    })
 
     const paddle_input: game.Paddle_Input = {
         left: false,
@@ -35,6 +73,17 @@ import Game from "../components/game.astro"
             e.preventDefault()
             paddle_input.space = true
         }
+        if (e.key === "p") {
+            if (game_state === "playing") {
+                game_state = "paused"
+                const pause_screen = document.getElementById("pause-screen")! as HTMLDivElement
+                pause_screen.classList.remove("hidden")
+            } else if (game_state === "paused") {
+                game_state = "playing"
+                const pause_screen = document.getElementById("pause-screen")! as HTMLDivElement
+                pause_screen.classList.add("hidden")
+            }
+        }
     })
 
     window.addEventListener("keyup", function (e) {
@@ -43,68 +92,88 @@ import Game from "../components/game.astro"
         if (e.key === " ") paddle_input.space = false
     })
 
-    const boost_indicator_element = document.getElementById("boost-indicator")! as HTMLDivElement
-    const boost_indicator_bar_element = document.getElementById(
-        "boost-indicator-bar",
-    )! as HTMLDivElement
-    const paddle = game.paddle_init(boost_indicator_element, boost_indicator_bar_element)
-    game.paddle_spawn(paddle, ctx)
-
-    const bricks: game.Brick[] = []
-    const brick_particles: game.Brick_Particle[] = []
-
-    {
-        // spawn bricks
-        const rows = 5
-        const cols = 8
-
-        const walls_margin = 20
-        const padding = 20
-        const brick_height = 20
-        const usable_width = ctx.game_width - walls_margin * 2 - padding * (cols - 1)
-        const brick_width = usable_width / cols
-
-        for (let row = 0; row < rows; row++) {
-            for (let col = 0; col < cols; col++) {
-                const x = walls_margin + col * (brick_width + padding)
-                const y =
-                    ctx.game_height - walls_margin - row * (brick_height + padding) - brick_height
-                bricks.push(game.brick_init(x, y, brick_width, brick_height))
-            }
-        }
-    }
-
-    const ball = game.ball_init(ctx, paddle)
-
     let last_frame_time = 0
 
     function frame(elapsed_time: number) {
-        ctx.elapsed_time = elapsed_time
-        ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+        switch (game_state) {
+            case "starting": {
+                ctx.score = 0
+                bricks.length = 0
+                brick_particles.length = 0
+
+                game.paddle_spawn(paddle, ctx)
+                ball = game.ball_init(ctx, paddle)
+                {
+                    // spawn bricks
+                    const rows = 5
+                    const cols = 8
+
+                    const walls_margin = 30
+                    const padding = 12
+                    const brick_height = 20
+                    const usable_width = ctx.game_width - walls_margin * 2 - padding * (cols - 1)
+                    const brick_width = usable_width / cols
+
+                    for (let row = 0; row < rows; row++) {
+                        for (let col = 0; col < cols; col++) {
+                            const x = walls_margin + col * (brick_width + padding)
+                            const y =
+                                ctx.game_height -
+                                walls_margin -
+                                row * (brick_height + padding) -
+                                brick_height
+                            bricks.push(game.brick_init(x, y, brick_width, brick_height))
+                        }
+                    }
+                }
+                game_state = "playing"
+                break
+            }
+            case "playing": {
+                if (!ctx || !ball) {
+                    throw new Error("Context or ball not initialized")
+                }
+
+                ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+                last_frame_time = elapsed_time
+
+                ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
+                game.frame_begin(ctx)
+
+                game.paddle_update(paddle, ctx, paddle_input)
+                if (game.ball_update(ctx, ball, paddle, bricks)) {
+                    game_state = "gameover"
+                    const gameover_screen = document.getElementById(
+                        "gameover-screen",
+                    )! as HTMLDivElement
+                    gameover_screen.classList.remove("hidden")
+                    const score_text_element = document.getElementById(
+                        "gameover-score-text",
+                    )! as HTMLParagraphElement
+                    score_text_element.textContent = ctx.score.toString()
+                }
+                for (const brick of bricks) {
+                    game.brick_update(ctx, brick, brick_particles)
+                }
+                game.brick_particles_update(ctx, brick_particles)
+                game.announcer_update(ctx)
+
+                game.paddle_render(ctx, paddle)
+                game.ball_render(ctx, ball)
+                for (const brick of bricks) {
+                    game.brick_render(ctx, brick)
+                }
+                game.brick_particles_render(ctx, brick_particles)
+                game.announcer_render(ctx)
+                game.score_render(ctx)
+
+                game.frame_end(ctx)
+
+                break
+            }
+        }
+
         last_frame_time = elapsed_time
-
-        ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
-        game.frame_begin(ctx)
-
-        game.paddle_update(paddle, ctx, paddle_input)
-        game.ball_update(ctx, ball, paddle, bricks)
-        for (const brick of bricks) {
-            game.brick_update(ctx, brick, brick_particles)
-        }
-        game.brick_particles_update(ctx, brick_particles)
-        game.announcer_update(ctx)
-
-        game.paddle_render(ctx, paddle)
-        game.ball_render(ctx, ball)
-        for (const brick of bricks) {
-            game.brick_render(ctx, brick)
-        }
-        game.brick_particles_render(ctx, brick_particles)
-        game.announcer_render(ctx)
-        game.score_render(ctx)
-
-        game.frame_end(ctx)
-
         requestAnimationFrame(frame)
     }
 

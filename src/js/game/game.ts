@@ -54,10 +54,14 @@ export function context_init(
     window.addEventListener("DOMContentLoaded", resize)
     window.addEventListener("resize", resize)
 
+    resize()
+
     return ctx
 }
 
 export function frame_begin(ctx: Context) {
+    ctx.elapsed_time += ctx.delta_time_secs * 1000
+
     const cctx = ctx.canvas_ctx
     const scale_x = cctx.canvas.width / ctx.game_width
     const scale_y = cctx.canvas.height / ctx.game_height
@@ -258,8 +262,8 @@ export function score_render(ctx: Context) {
 const PADDLE_WIDTH = 80
 const PADDLE_HEIGHT = 10
 
-const PADDLE_SPEED_PER_SECOND = 200
-const PADDLE_BOOST_SPEED_PER_SECOND = 800
+const PADDLE_SPEED_PER_SECOND = 400
+const PADDLE_BOOST_SPEED_PER_SECOND = 1000
 
 const BOOST_COOLDOWN_MS = 4000
 const BOOST_DURATION_MS = 500
@@ -780,8 +784,8 @@ export function brick_render(ctx: Context, brick: Brick) {
     }
 }
 
-const BALL_RADIUS = 5
-const BALL_SPEED_PER_SECOND = 300
+const BALL_RADIUS = 7
+const BALL_SPEED_PER_SECOND = 500
 const BALL_COLOR = { r: 255, g: 0, b: 0, a: 1 }
 
 export type Ball = {
@@ -814,9 +818,11 @@ export function ball_init(ctx: Context, paddle: Paddle): Ball {
     }
 }
 
-export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Brick[]) {
+export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Brick[]): boolean {
     ball.x += ball.vx * ctx.delta_time_secs
     ball.y += ball.vy * ctx.delta_time_secs
+    let gameover = false
+
     ;(function () {
         const b_left = ball.x - BALL_RADIUS
         const b_right = ball.x + BALL_RADIUS
@@ -838,6 +844,9 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
             if (b_top > ctx.game_height) {
                 ball.y = ctx.game_height - BALL_RADIUS
                 ball.vy *= -1
+                return
+            } else if (b_bottom < 0) {
+                gameover = true
                 return
             }
         }
@@ -936,6 +945,8 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
             }
         }
     })()
+
+    return gameover
 }
 
 export function ball_render(ctx: Context, ball: Ball) {
