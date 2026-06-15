@@ -7,20 +7,43 @@ export type Context = {
 
     elapsed_time: number
     delta_time_secs: number
+
+    announcer_text_element?: HTMLParagraphElement
+    announcer_state: Announcer_State
+    announcer_state_prev?: Announcer_State
+    announcer_state_change_timestamp: number
+    announcer_queue: string[]
+
+    streak: number
+    score: number
+    score_text_element?: HTMLParagraphElement
 }
 
 export const LOGICAL_WIDTH = 800
 export const LOGICAL_HEIGHT = 600
 
-export function context_init(canvas_element: HTMLCanvasElement): Context {
-    const ctx = {
+export function context_init(
+    canvas_element: HTMLCanvasElement,
+    announcer_text_element?: HTMLParagraphElement,
+    score_text_element?: HTMLParagraphElement,
+): Context {
+    const ctx: Context = {
         canvas_ctx: canvas_element.getContext("2d")!,
         game_width: LOGICAL_WIDTH,
         game_height: LOGICAL_HEIGHT,
 
         elapsed_time: 0,
         delta_time_secs: 0,
-    } as Context
+
+        announcer_text_element,
+        announcer_state: "hidden",
+        announcer_state_change_timestamp: 0,
+        announcer_queue: [],
+
+        streak: 0,
+        score: 0,
+        score_text_element,
+    }
 
     function resize() {
         const r = canvas_element.getBoundingClientRect()
@@ -126,6 +149,109 @@ function animation_update(animation: Animation, time: number) {
             const range = animation.value_end - animation.value_start
             animation.value = animation.value_start + fraction * range
         }
+    }
+}
+
+type Announcer_State = "hidden" | "appearing" | "visible" | "growing" | "dissapearing"
+
+function announcer_change_state(ctx: Context, next: Announcer_State) {
+    ctx.announcer_state_change_timestamp = ctx.elapsed_time
+    ctx.announcer_state_prev = ctx.announcer_state
+    ctx.announcer_state = next
+}
+
+export function announce_score(ctx: Context, text: string) {
+    if (ctx.announcer_text_element) {
+        ctx.announcer_queue.push(text)
+    }
+}
+
+const announcer_next_state: Record<Announcer_State, Announcer_State> = {
+    hidden: "appearing",
+    appearing: "visible",
+    visible: "growing",
+    growing: "dissapearing",
+    dissapearing: "hidden",
+}
+
+const announcer_duration_ms: Record<Announcer_State, number> = {
+    hidden: 0,
+    appearing: 100,
+    visible: 200,
+    growing: 150,
+    dissapearing: 100,
+}
+
+export function announcer_update(ctx: Context) {
+    if (!ctx.announcer_text_element) {
+        return
+    }
+
+    if (ctx.announcer_state === "hidden") {
+        const text = ctx.announcer_queue.shift()
+        if (text) {
+            announcer_change_state(ctx, "appearing")
+            ctx.announcer_text_element.textContent = text
+        }
+    } else {
+        const next_state = announcer_next_state[ctx.announcer_state]
+        const duration_ms = announcer_duration_ms[ctx.announcer_state]
+        if (ctx.announcer_state_change_timestamp + duration_ms < ctx.elapsed_time) {
+            announcer_change_state(ctx, next_state)
+        }
+    }
+}
+
+export function announcer_render(ctx: Context) {
+    if (ctx.announcer_state_prev === ctx.announcer_state || !ctx.announcer_text_element) {
+        return
+    }
+
+    const el = ctx.announcer_text_element
+
+    switch (ctx.announcer_state) {
+        case "hidden": {
+            el.style.transition = ""
+            el.classList.add("hidden")
+            el.classList.remove("text-8xl")
+            break
+        }
+        case "appearing": {
+            el.classList.remove("hidden")
+            el.classList.add("opacity-0", "text-2xl")
+            el.style.transition = "opacity 100ms ease-in-out"
+
+            el.offsetWidth // force reflow
+            el.classList.remove("opacity-0")
+            el.classList.add("opacity-100")
+            break
+        }
+        case "visible": {
+            break
+        }
+        case "growing": {
+            el.style.transition = "all 150ms ease-in-out"
+            el.classList.remove("text-2xl")
+            el.classList.add("text-8xl")
+            break
+        }
+        case "dissapearing": {
+            el.style.transition = "all 100ms ease-in-out"
+            el.classList.remove("opacity-100")
+            el.classList.add("opacity-0")
+            break
+        }
+    }
+}
+
+export function score_render(ctx: Context) {
+    if (!ctx.score_text_element) {
+        return
+    }
+
+    const next_score = ctx.score.toString()
+    if (ctx.score_text_element.textContent !== next_score) {
+        ctx.score_text_element.textContent = next_score
     }
 }
 
@@ -551,6 +677,7 @@ export function brick_take_hit(ctx: Context, brick: Brick) {
     }
 
     if (brick.hits < brick.lives) {
+        ctx.score += 100
         brick.hits += 1
     }
 
@@ -575,6 +702,13 @@ export function brick_update(ctx: Context, brick: Brick, particles: Brick_Partic
                     brick.state = "destroyed"
                     brick.animating = false
                     brick.color = brick.anim_end_color
+
+                    ctx.streak += 1
+                    ctx.score += 100 * ctx.streak
+
+                    if (ctx.streak > 1) {
+                        announce_score(ctx, `Streak x${ctx.streak}`)
+                    }
 
                     // spawn particles
 
@@ -691,9 +825,6 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
 
         {
             // collisions with walls
-            const b_left = ball.x - BALL_RADIUS
-            const b_right = ball.x + BALL_RADIUS
-
             if (b_left < 0) {
                 ball.x = BALL_RADIUS
                 ball.vx *= -1
@@ -703,8 +834,6 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
                 ball.vx *= -1
                 return
             }
-
-            const b_top = ball.y + BALL_RADIUS
 
             if (b_top > ctx.game_height) {
                 ball.y = ctx.game_height - BALL_RADIUS
@@ -803,6 +932,7 @@ export function ball_update(ctx: Context, ball: Ball, paddle: Paddle, bricks: Br
                 ball.vy = BALL_SPEED_PER_SECOND * Math.cos(angle_rad)
 
                 paddle_bounce(paddle, ctx.elapsed_time)
+                ctx.streak = 0
             }
         }
     })()

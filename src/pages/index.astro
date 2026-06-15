@@ -13,31 +13,16 @@ import Game from "../components/game.astro"
 </html>
 
 <script>
-    import {
-        context_init,
-        frame_begin,
-        frame_end,
-        paddle_init,
-        paddle_render,
-        paddle_spawn,
-        paddle_update,
-        type Paddle_Input,
-        ball_init,
-        ball_update,
-        ball_render,
-        type Brick,
-        brick_init,
-        brick_render,
-        brick_update,
-        type Brick_Particle,
-        brick_particles_update,
-        brick_particles_render,
-    } from "../js/game/game.ts"
+    import * as game from "../js/game/game.ts"
 
     const canvas = document.getElementById("canvas")! as HTMLCanvasElement
-    const ctx = context_init(canvas)
+    const announcer_text_element = document.getElementById(
+        "announcer-text",
+    )! as HTMLParagraphElement
+    const score_text_element = document.getElementById("score-text")! as HTMLParagraphElement
+    const ctx = game.context_init(canvas, announcer_text_element, score_text_element)
 
-    const paddle_input: Paddle_Input = {
+    const paddle_input: game.Paddle_Input = {
         left: false,
         right: false,
         space: false,
@@ -62,11 +47,11 @@ import Game from "../components/game.astro"
     const boost_indicator_bar_element = document.getElementById(
         "boost-indicator-bar",
     )! as HTMLDivElement
-    const paddle = paddle_init(boost_indicator_element, boost_indicator_bar_element)
-    paddle_spawn(paddle, ctx)
+    const paddle = game.paddle_init(boost_indicator_element, boost_indicator_bar_element)
+    game.paddle_spawn(paddle, ctx)
 
-    const bricks: Brick[] = []
-    const brick_particles: Brick_Particle[] = []
+    const bricks: game.Brick[] = []
+    const brick_particles: game.Brick_Particle[] = []
 
     {
         // spawn bricks
@@ -84,12 +69,12 @@ import Game from "../components/game.astro"
                 const x = walls_margin + col * (brick_width + padding)
                 const y =
                     ctx.game_height - walls_margin - row * (brick_height + padding) - brick_height
-                bricks.push(brick_init(x, y, brick_width, brick_height))
+                bricks.push(game.brick_init(x, y, brick_width, brick_height))
             }
         }
     }
 
-    const ball = ball_init(ctx, paddle)
+    const ball = game.ball_init(ctx, paddle)
 
     let last_frame_time = 0
 
@@ -99,23 +84,26 @@ import Game from "../components/game.astro"
         last_frame_time = elapsed_time
 
         ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
-        frame_begin(ctx)
+        game.frame_begin(ctx)
 
-        paddle_update(paddle, ctx, paddle_input)
-        ball_update(ctx, ball, paddle, bricks)
+        game.paddle_update(paddle, ctx, paddle_input)
+        game.ball_update(ctx, ball, paddle, bricks)
         for (const brick of bricks) {
-            brick_update(ctx, brick, brick_particles)
+            game.brick_update(ctx, brick, brick_particles)
         }
-        brick_particles_update(ctx, brick_particles)
+        game.brick_particles_update(ctx, brick_particles)
+        game.announcer_update(ctx)
 
-        paddle_render(ctx, paddle)
-        ball_render(ctx, ball)
+        game.paddle_render(ctx, paddle)
+        game.ball_render(ctx, ball)
         for (const brick of bricks) {
-            brick_render(ctx, brick)
+            game.brick_render(ctx, brick)
         }
-        brick_particles_render(ctx, brick_particles)
+        game.brick_particles_render(ctx, brick_particles)
+        game.announcer_render(ctx)
+        game.score_render(ctx)
 
-        frame_end(ctx)
+        game.frame_end(ctx)
 
         requestAnimationFrame(frame)
     }

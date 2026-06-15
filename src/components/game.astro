@@ -1,8 +1,11 @@
 <div class="w-full">
-    <div class="w-full max-w-[800px] mx-auto flex justify-between items-center">
-        <div></div>
+    <div class="w-full max-w-[800px] mx-auto flex justify-between items-start">
+        <div>
+            <p class="font-medium text-gray-400">Score</p>
+            <p id="score-text" class="text-gray-200 text-lg">0</p>
+        </div>
         <div class="flex flex-col items-end gap-2">
-            <p class="font-medium text-gray-200">Boost</p>
+            <p class="font-medium text-gray-400">Boost</p>
             <div id="boost-indicator" class="w-20 h-2 rounded-full bg-gray-500/20 relative">
                 <div
                     id="boost-indicator-bar"
@@ -13,8 +16,13 @@
         </div>
     </div>
 
-    <canvas
-        id="canvas"
-        class="w-full max-w-[800px] mx-auto mt-4 aspect-[4/3] rounded border border-cyan-500"
-    ></canvas>
+    <div class="w-full max-w-[800px] mx-auto mt-4 aspect-[4/3] relative">
+        <canvas
+            id="canvas"
+            class="w-full max-w-[800px] mx-auto mt-4 aspect-[4/3] rounded border border-cyan-500"
+        ></canvas>
+        <div class="absolute inset-0 flex justify-center items-center">
+            <p id="announcer-text" class="text-white text-2xl hidden">Streak x4</p>
+        </div>
+    </div>
 </div>

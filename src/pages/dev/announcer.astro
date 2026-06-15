@@ -1,0 +1,57 @@
+---
+import "../../styles/global.css"
+import Game from "../../components/game.astro"
+---
+
+<html class="w-full min-h-[100vh]">
+    <head>
+        <title>Playground</title>
+    </head>
+
+    <body class="w-full min-h-[100vh] px-8 mt-10 bg-black">
+        <Game />
+    </body>
+
+    <script>
+        import {
+            context_init,
+            frame_begin,
+            frame_end,
+            announce_score,
+            announcer_update,
+            announcer_render,
+        } from "../../js/game/game.ts"
+
+        const canvas = document.getElementById("canvas")! as HTMLCanvasElement
+        const announcer_text_element = document.getElementById(
+            "announcer-text",
+        )! as HTMLParagraphElement
+        const ctx = context_init(canvas, announcer_text_element)
+
+        window.addEventListener("keydown", function (e) {
+            if (e.key === "a") announce_score(ctx, "Streak x4")
+        })
+
+        window.addEventListener("keyup", function (e) {})
+
+        let last_frame_time = 0
+
+        function frame(elapsed_time: number) {
+            ctx.elapsed_time = elapsed_time
+            ctx.delta_time_secs = (elapsed_time - last_frame_time) / 1000
+            last_frame_time = elapsed_time
+
+            ctx.canvas_ctx.clearRect(0, 0, canvas.width, canvas.height)
+            frame_begin(ctx)
+
+            announcer_update(ctx)
+            announcer_render(ctx)
+
+            frame_end(ctx)
+
+            requestAnimationFrame(frame)
+        }
+
+        requestAnimationFrame(frame)
+    </script>
+</html>
